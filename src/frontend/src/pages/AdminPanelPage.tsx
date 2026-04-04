@@ -43,6 +43,8 @@ import {
   LogOut,
   Menu,
   Palette,
+  Pause,
+  Play,
   Plus,
   Rocket,
   Search,
@@ -56,11 +58,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
-  AdvertiserStatusVariant,
-  ReviewAction,
+  AdvertiserProfile,
+  Campaign,
   SeedEntry,
   Website,
 } from "../backend.d";
+
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
@@ -72,23 +75,38 @@ import {
   useAssignRole,
   useDeleteWebsite,
   useEditWebsite,
+  useGetAdsEnabled,
   useGetAllAdvertiserApplications,
+  useGetAllCampaigns,
   useGetAllWebsites,
   useGetBlacklist,
   useGetFlaggedDomains,
   useGetSecurityLogs,
   useGetStats,
   useImportSeedData,
+  usePauseCampaign,
   useRejectAdvertiser,
   useRejectWebsite,
   useRemoveFromBlacklist,
+  useResumeCampaign,
   useReviewFlaggedDomain,
+  useSetAdsEnabled,
 } from "../hooks/useQueries";
 import {
   validateDescription,
   validateKeywords,
   validateTitle,
 } from "../utils/security";
+
+// ── Local type aliases ─────────────────────────────────────────────
+
+type ReviewAction = { approve: null } | { block: null } | { remove: null };
+type AdvertiserStatusVariant = AdvertiserProfile["status"];
+
+// Helper: ICP runtime returns variant objects; cast for in-operator checks
+function hasKey(obj: unknown, key: string): boolean {
+  return typeof obj === "object" && obj !== null && key in obj;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -298,9 +316,11 @@ function DashboardSection() {
   const sorted = [...allWebsites].sort(
     (a, b) => Number(b.submittedAt) - Number(a.submittedAt),
   );
-  const latestPending = sorted.filter((s) => "pending" in s.status).slice(0, 3);
+  const latestPending = sorted
+    .filter((s) => hasKey(s.status, "pending"))
+    .slice(0, 3);
   const recentApproved = sorted
-    .filter((s) => "approved" in s.status)
+    .filter((s) => hasKey(s.status, "approved"))
     .slice(0, 3);
 
   const statCards = [
@@ -501,10 +521,11 @@ function WebsitesSection() {
 
   const filtered = allWebsites
     .filter((s) => {
-      if (statusFilter === "pending" && !("pending" in s.status)) return false;
-      if (statusFilter === "approved" && !("approved" in s.status))
+      if (statusFilter === "pending" && !hasKey(s.status, "pending"))
         return false;
-      if (statusFilter === "rejected" && !("rejected" in s.status))
+      if (statusFilter === "approved" && !hasKey(s.status, "approved"))
+        return false;
+      if (statusFilter === "rejected" && !hasKey(s.status, "rejected"))
         return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -705,7 +726,7 @@ function WebsitesSection() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {"pending" in site.status && (
+                      {hasKey(site.status, "pending") && (
                         <>
                           <button
                             type="button"
@@ -1601,12 +1622,11 @@ function SecuritySection() {
   const handleReview = async (domain: string, action: ReviewAction) => {
     try {
       await reviewFlaggedMutation.mutateAsync({ domain, action });
-      const label =
-        "approve" in action
-          ? "Approved"
-          : "block" in action
-            ? "Blocked"
-            : "Removed";
+      const label = hasKey(action, "approve")
+        ? "Approved"
+        : hasKey(action, "block")
+          ? "Blocked"
+          : "Removed";
       toast.success(`${label} successfully`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Review action failed");
@@ -1764,7 +1784,7 @@ function SecuritySection() {
                         </code>
                       </TableCell>
                       <TableCell>
-                        {"flagged" in entry.status ? (
+                        {hasKey(entry.status, "flagged") ? (
                           <Badge
                             variant="outline"
                             className="bg-yellow-100 text-yellow-800 border-yellow-200 text-xs"
@@ -2019,7 +2039,7 @@ function AnalyticsSection() {
   const { data: allWebsites = [] } = useGetAllWebsites();
 
   const topSites = allWebsites
-    .filter((s) => "approved" in s.status)
+    .filter((s) => hasKey(s.status, "approved"))
     .slice(0, 5);
 
   return (
@@ -2892,12 +2912,70 @@ function NotificationsSection() {
 function MonetizationSection() {
   const { data: applications = [], isLoading } =
     useGetAllAdvertiserApplications();
+  const { data: allCampaigns = [], isLoading: campaignsLoading } =
+    useGetAllCampaigns();
+  const { data: adsEnabled = false, isLoading: adsEnabledLoading } =
+    useGetAdsEnabled();
   const approveMutation = useApproveAdvertiser();
   const rejectMutation = useRejectAdvertiser();
   const addBalanceMutation = useAddAdvertiserBalance();
+  const setAdsEnabledMutation = useSetAdsEnabled();
+  const pauseCampaignMutation = usePauseCampaign();
+  const resumeCampaignMutation = useResumeCampaign();
 
   const [balanceEmail, setBalanceEmail] = useState("");
   const [balanceAmount, setBalanceAmount] = useState("");
+
+  const handleToggleAds = async () => {
+    try {
+      await setAdsEnabledMutation.mutateAsync(!adsEnabled);
+      toast.success(adsEnabled ? "Ad Engine disabled" : "Ad Engine enabled");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to toggle ad engine",
+      );
+    }
+  };
+
+  const handlePauseCampaign = async (id: bigint) => {
+    try {
+      await pauseCampaignMutation.mutateAsync(id);
+      toast.success("Campaign paused");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to pause");
+    }
+  };
+
+  const handleResumeCampaign = async (id: bigint) => {
+    try {
+      await resumeCampaignMutation.mutateAsync(id);
+      toast.success("Campaign resumed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume");
+    }
+  };
+
+  const getCampaignStatusBadge = (campaign: Campaign) => {
+    if (hasKey(campaign.status, "active")) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+          Active
+        </span>
+      );
+    }
+    if (hasKey(campaign.status, "paused")) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+          Paused
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+        Ended
+      </span>
+    );
+  };
 
   const handleApprove = async (email: string) => {
     try {
@@ -2969,6 +3047,153 @@ function MonetizationSection() {
         </p>
       </div>
 
+      {/* ── Ad Engine Control ── */}
+      <div className="space-y-4">
+        <h2 className="font-semibold text-base">
+          Ad Campaigns &amp; Engine Control
+        </h2>
+
+        {/* Global Ads Toggle */}
+        <div
+          className="rounded-xl border border-border p-5 max-w-md flex items-center justify-between gap-4"
+          data-ocid="monetization.ads_engine.panel"
+        >
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Ad Engine Status
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {adsEnabled
+                ? "Ads are live on search results"
+                : "Ads are hidden — showing “Coming Soon” placeholder"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleToggleAds()}
+            disabled={setAdsEnabledMutation.isPending || adsEnabledLoading}
+            className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[#006AFF] focus:ring-offset-2 ${
+              adsEnabled ? "bg-[#006AFF]" : "bg-gray-200"
+            } disabled:opacity-50`}
+            aria-checked={adsEnabled}
+            role="switch"
+            data-ocid="monetization.ads_engine.toggle"
+          >
+            <span
+              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                adsEnabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* All Campaigns Table */}
+        {campaignsLoading ? (
+          <div
+            className="flex items-center gap-2 py-4 text-muted-foreground"
+            data-ocid="monetization.campaigns.loading_state"
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-sm">Loading campaigns…</span>
+          </div>
+        ) : allCampaigns.length === 0 ? (
+          <div
+            className="rounded-xl border border-border p-8 text-center"
+            data-ocid="monetization.campaigns.empty_state"
+          >
+            <p className="text-sm text-muted-foreground">
+              No campaigns created yet
+            </p>
+          </div>
+        ) : (
+          <div
+            className="rounded-xl border border-border overflow-hidden"
+            data-ocid="monetization.campaigns.table"
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead>Advertiser</TableHead>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Budget</TableHead>
+                  <TableHead>Bid</TableHead>
+                  <TableHead>Impr</TableHead>
+                  <TableHead>Clicks</TableHead>
+                  <TableHead>Spend</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allCampaigns.map((campaign, i) => (
+                  <TableRow
+                    key={campaign.id.toString()}
+                    data-ocid={`monetization.campaign.item.${i + 1}`}
+                  >
+                    <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">
+                      {campaign.advertiserEmail}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium max-w-[140px] truncate">
+                      {campaign.name}
+                    </TableCell>
+                    <TableCell>{getCampaignStatusBadge(campaign)}</TableCell>
+                    <TableCell className="text-sm">
+                      ₹{campaign.budget.toString()}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      ₹{campaign.bidAmount.toString()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {campaign.impressions.toString()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {campaign.clicks.toString()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      ₹{campaign.spend.toString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {hasKey(campaign.status, "active") && (
+                          <button
+                            type="button"
+                            title="Pause"
+                            onClick={() =>
+                              void handlePauseCampaign(campaign.id)
+                            }
+                            disabled={pauseCampaignMutation.isPending}
+                            className="h-7 w-7 flex items-center justify-center rounded-md text-amber-600 hover:bg-amber-100 transition-colors"
+                            data-ocid={`monetization.campaign.pause.button.${i + 1}`}
+                          >
+                            <Pause className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {hasKey(campaign.status, "paused") && (
+                          <button
+                            type="button"
+                            title="Resume"
+                            onClick={() =>
+                              void handleResumeCampaign(campaign.id)
+                            }
+                            disabled={resumeCampaignMutation.isPending}
+                            className="h-7 w-7 flex items-center justify-center rounded-md text-green-600 hover:bg-green-100 transition-colors"
+                            data-ocid={`monetization.campaign.resume.button.${i + 1}`}
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
       {/* Advertiser Applications Table */}
       <div className="space-y-3">
         <h2 className="font-semibold text-base">Advertiser Applications</h2>
@@ -3032,7 +3257,7 @@ function MonetizationSection() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {"pending" in app.status && (
+                          {hasKey(app.status, "pending") && (
                             <>
                               <button
                                 type="button"

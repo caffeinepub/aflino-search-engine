@@ -8,10 +8,445 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
-export const idlService = IDL.Service({});
+export const WebsiteStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'approved' : IDL.Null,
+  'rejected' : IDL.Null,
+});
+export const Website = IDL.Record({
+  'id' : IDL.Nat,
+  'url' : IDL.Text,
+  'status' : WebsiteStatus,
+  'title' : IDL.Text,
+  'ownerPrincipal' : IDL.Principal,
+  'approvedAt' : IDL.Opt(IDL.Int),
+  'verificationToken' : IDL.Text,
+  'submittedAt' : IDL.Int,
+  'description' : IDL.Text,
+  'isSeed' : IDL.Bool,
+  'keywords' : IDL.Vec(IDL.Text),
+  'isVerified' : IDL.Bool,
+});
+export const UserRole = IDL.Variant({
+  'admin' : IDL.Null,
+  'user' : IDL.Null,
+  'guest' : IDL.Null,
+});
+export const CampaignStatus = IDL.Variant({
+  'active' : IDL.Null,
+  'ended' : IDL.Null,
+  'paused' : IDL.Null,
+});
+export const Campaign = IDL.Record({
+  'id' : IDL.Nat,
+  'status' : CampaignStatus,
+  'clicks' : IDL.Nat,
+  'name' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'advertiserEmail' : IDL.Text,
+  'impressions' : IDL.Nat,
+  'bidAmount' : IDL.Nat,
+  'keywords' : IDL.Vec(IDL.Text),
+  'spend' : IDL.Nat,
+  'dailyBudget' : IDL.Nat,
+  'destinationUrl' : IDL.Text,
+  'budget' : IDL.Nat,
+});
+export const AdResult = IDL.Record({
+  'name' : IDL.Text,
+  'campaignId' : IDL.Nat,
+  'score' : IDL.Nat,
+  'bidAmount' : IDL.Nat,
+  'destinationUrl' : IDL.Text,
+});
+export const AdvertiserStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'approved' : IDL.Null,
+  'rejected' : IDL.Null,
+});
+export const AdvertiserProfile = IDL.Record({
+  'status' : AdvertiserStatus,
+  'appliedAt' : IDL.Int,
+  'balance' : IDL.Nat,
+  'reviewedAt' : IDL.Opt(IDL.Int),
+  'email' : IDL.Text,
+});
+export const BlacklistStatus = IDL.Variant({
+  'blocked' : IDL.Null,
+  'flagged' : IDL.Null,
+});
+export const BlacklistEntry = IDL.Record({
+  'status' : BlacklistStatus,
+  'domain' : IDL.Text,
+  'reviewedBy' : IDL.Opt(IDL.Text),
+  'addedAt' : IDL.Int,
+  'reason' : IDL.Text,
+});
+export const UserProfile = IDL.Record({ 'email' : IDL.Text });
+export const SecurityLog = IDL.Record({
+  'id' : IDL.Nat,
+  'logType' : IDL.Text,
+  'timestamp' : IDL.Int,
+  'details' : IDL.Text,
+  'principalText' : IDL.Text,
+});
+export const Stats = IDL.Record({
+  'total' : IDL.Nat,
+  'pending' : IDL.Nat,
+  'approved' : IDL.Nat,
+});
+export const SeedEntry = IDL.Record({
+  'url' : IDL.Text,
+  'title' : IDL.Text,
+  'description' : IDL.Text,
+  'keywords' : IDL.Vec(IDL.Text),
+});
+export const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+export const http_header = IDL.Record({
+  'value' : IDL.Text,
+  'name' : IDL.Text,
+});
+export const http_request_result = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
+});
+export const TransformationInput = IDL.Record({
+  'context' : IDL.Vec(IDL.Nat8),
+  'response' : http_request_result,
+});
+export const TransformationOutput = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
+});
+
+export const idlService = IDL.Service({
+  '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+  'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
+  'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
+  'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
+  'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'createCampaign' : IDL.Func(
+      [
+        IDL.Text,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Vec(IDL.Text),
+        IDL.Text,
+      ],
+      [Campaign],
+      [],
+    ),
+  'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
+  'editWebsite' : IDL.Func(
+      [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+      [Website],
+      [],
+    ),
+  'getAdsEnabled' : IDL.Func([], [IDL.Bool], ['query']),
+  'getAdsForSearch' : IDL.Func([IDL.Text], [IDL.Vec(AdResult)], []),
+  'getAllAdvertiserApplications' : IDL.Func(
+      [],
+      [IDL.Vec(AdvertiserProfile)],
+      ['query'],
+    ),
+  'getAllCampaigns' : IDL.Func([], [IDL.Vec(Campaign)], ['query']),
+  'getAllWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+  'getBlacklist' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
+  'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
+  'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getFlaggedDomains' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
+  'getMyAdvertiserProfile' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(AdvertiserProfile)],
+      ['query'],
+    ),
+  'getMyCampaigns' : IDL.Func([IDL.Text], [IDL.Vec(Campaign)], []),
+  'getMyWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+  'getPendingWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+  'getSecurityLogs' : IDL.Func([], [IDL.Vec(SecurityLog)], ['query']),
+  'getStats' : IDL.Func([], [Stats], ['query']),
+  'getUserProfile' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Opt(UserProfile)],
+      ['query'],
+    ),
+  'getVerificationToken' : IDL.Func([IDL.Nat], [IDL.Text], ['query']),
+  'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
+  'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
+  'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result], []),
+  'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
+  'recordClick' : IDL.Func([IDL.Text], [], []),
+  'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
+  'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
+  'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
+  'resumeCampaign' : IDL.Func([IDL.Nat], [], []),
+  'reviewFlaggedDomain' : IDL.Func(
+      [
+        IDL.Text,
+        IDL.Variant({
+          'remove' : IDL.Null,
+          'approve' : IDL.Null,
+          'block' : IDL.Null,
+        }),
+      ],
+      [],
+      [],
+    ),
+  'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'searchWebsites' : IDL.Func([IDL.Text], [IDL.Vec(Website)], ['query']),
+  'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
+  'submitWebsite' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+      [Website],
+      [],
+    ),
+  'transform' : IDL.Func(
+      [TransformationInput],
+      [TransformationOutput],
+      ['query'],
+    ),
+  'updateCampaign' : IDL.Func(
+      [
+        IDL.Nat,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Vec(IDL.Text),
+        IDL.Text,
+      ],
+      [Campaign],
+      [],
+    ),
+  'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+});
 
 export const idlInitArgs = [];
 
-export const idlFactory = ({ IDL }) => { return IDL.Service({}); };
+export const idlFactory = ({ IDL }) => {
+  const WebsiteStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'approved' : IDL.Null,
+    'rejected' : IDL.Null,
+  });
+  const Website = IDL.Record({
+    'id' : IDL.Nat,
+    'url' : IDL.Text,
+    'status' : WebsiteStatus,
+    'title' : IDL.Text,
+    'ownerPrincipal' : IDL.Principal,
+    'approvedAt' : IDL.Opt(IDL.Int),
+    'verificationToken' : IDL.Text,
+    'submittedAt' : IDL.Int,
+    'description' : IDL.Text,
+    'isSeed' : IDL.Bool,
+    'keywords' : IDL.Vec(IDL.Text),
+    'isVerified' : IDL.Bool,
+  });
+  const UserRole = IDL.Variant({
+    'admin' : IDL.Null,
+    'user' : IDL.Null,
+    'guest' : IDL.Null,
+  });
+  const CampaignStatus = IDL.Variant({
+    'active' : IDL.Null,
+    'ended' : IDL.Null,
+    'paused' : IDL.Null,
+  });
+  const Campaign = IDL.Record({
+    'id' : IDL.Nat,
+    'status' : CampaignStatus,
+    'clicks' : IDL.Nat,
+    'name' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'advertiserEmail' : IDL.Text,
+    'impressions' : IDL.Nat,
+    'bidAmount' : IDL.Nat,
+    'keywords' : IDL.Vec(IDL.Text),
+    'spend' : IDL.Nat,
+    'dailyBudget' : IDL.Nat,
+    'destinationUrl' : IDL.Text,
+    'budget' : IDL.Nat,
+  });
+  const AdResult = IDL.Record({
+    'name' : IDL.Text,
+    'campaignId' : IDL.Nat,
+    'score' : IDL.Nat,
+    'bidAmount' : IDL.Nat,
+    'destinationUrl' : IDL.Text,
+  });
+  const AdvertiserStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'approved' : IDL.Null,
+    'rejected' : IDL.Null,
+  });
+  const AdvertiserProfile = IDL.Record({
+    'status' : AdvertiserStatus,
+    'appliedAt' : IDL.Int,
+    'balance' : IDL.Nat,
+    'reviewedAt' : IDL.Opt(IDL.Int),
+    'email' : IDL.Text,
+  });
+  const BlacklistStatus = IDL.Variant({
+    'blocked' : IDL.Null,
+    'flagged' : IDL.Null,
+  });
+  const BlacklistEntry = IDL.Record({
+    'status' : BlacklistStatus,
+    'domain' : IDL.Text,
+    'reviewedBy' : IDL.Opt(IDL.Text),
+    'addedAt' : IDL.Int,
+    'reason' : IDL.Text,
+  });
+  const UserProfile = IDL.Record({ 'email' : IDL.Text });
+  const SecurityLog = IDL.Record({
+    'id' : IDL.Nat,
+    'logType' : IDL.Text,
+    'timestamp' : IDL.Int,
+    'details' : IDL.Text,
+    'principalText' : IDL.Text,
+  });
+  const Stats = IDL.Record({
+    'total' : IDL.Nat,
+    'pending' : IDL.Nat,
+    'approved' : IDL.Nat,
+  });
+  const SeedEntry = IDL.Record({
+    'url' : IDL.Text,
+    'title' : IDL.Text,
+    'description' : IDL.Text,
+    'keywords' : IDL.Vec(IDL.Text),
+  });
+  const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
+  const http_request_result = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
+  });
+  const TransformationInput = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'response' : http_request_result,
+  });
+  const TransformationOutput = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
+  });
+  
+  return IDL.Service({
+    '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+    'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
+    'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
+    'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
+    'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'createCampaign' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Vec(IDL.Text),
+          IDL.Text,
+        ],
+        [Campaign],
+        [],
+      ),
+    'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
+    'editWebsite' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+        [Website],
+        [],
+      ),
+    'getAdsEnabled' : IDL.Func([], [IDL.Bool], ['query']),
+    'getAdsForSearch' : IDL.Func([IDL.Text], [IDL.Vec(AdResult)], []),
+    'getAllAdvertiserApplications' : IDL.Func(
+        [],
+        [IDL.Vec(AdvertiserProfile)],
+        ['query'],
+      ),
+    'getAllCampaigns' : IDL.Func([], [IDL.Vec(Campaign)], ['query']),
+    'getAllWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+    'getBlacklist' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
+    'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
+    'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getFlaggedDomains' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
+    'getMyAdvertiserProfile' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(AdvertiserProfile)],
+        ['query'],
+      ),
+    'getMyCampaigns' : IDL.Func([IDL.Text], [IDL.Vec(Campaign)], []),
+    'getMyWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+    'getPendingWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+    'getSecurityLogs' : IDL.Func([], [IDL.Vec(SecurityLog)], ['query']),
+    'getStats' : IDL.Func([], [Stats], ['query']),
+    'getUserProfile' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Opt(UserProfile)],
+        ['query'],
+      ),
+    'getVerificationToken' : IDL.Func([IDL.Nat], [IDL.Text], ['query']),
+    'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
+    'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
+    'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result], []),
+    'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
+    'recordClick' : IDL.Func([IDL.Text], [], []),
+    'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
+    'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
+    'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
+    'resumeCampaign' : IDL.Func([IDL.Nat], [], []),
+    'reviewFlaggedDomain' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Variant({
+            'remove' : IDL.Null,
+            'approve' : IDL.Null,
+            'block' : IDL.Null,
+          }),
+        ],
+        [],
+        [],
+      ),
+    'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'searchWebsites' : IDL.Func([IDL.Text], [IDL.Vec(Website)], ['query']),
+    'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
+    'submitWebsite' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+        [Website],
+        [],
+      ),
+    'transform' : IDL.Func(
+        [TransformationInput],
+        [TransformationOutput],
+        ['query'],
+      ),
+    'updateCampaign' : IDL.Func(
+        [
+          IDL.Nat,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Vec(IDL.Text),
+          IDL.Text,
+        ],
+        [Campaign],
+        [],
+      ),
+    'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+  });
+};
 
 export const init = ({ IDL }) => { return []; };

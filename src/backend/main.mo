@@ -2,11 +2,16 @@ import AccessControl "./authorization/access-control";
 import MixinAuthorization "./authorization/MixinAuthorization";
 import Outcall "./http-outcalls/outcall";
 import Map "mo:core/Map";
-import Option "mo:core/Option";
+import Nat "mo:core/Nat";
 import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Int "mo:core/Int";
+import Text "mo:core/Text";
 import Runtime "mo:core/Runtime";
+
+import Array "mo:core/Array";
+import Iter "mo:core/Iter";
+
 
 actor {
 
@@ -16,6 +21,8 @@ actor {
   include MixinAuthorization(accessControlState);
 
   // ─── Types ────────────────────────────────────────────────────────────────
+
+  public type Result<A,B> = { #ok : A; #err : B };
 
   public type WebsiteStatus = { #pending; #approved; #rejected };
 
@@ -65,6 +72,46 @@ actor {
     reviewedBy : ?Text;
   };
 
+  public type AdvertiserStatus = { #pending; #approved; #rejected };
+
+  public type AdvertiserProfile = {
+    email : Text;
+    status : AdvertiserStatus;
+    balance : Nat;
+    appliedAt : Int;
+    reviewedAt : ?Int;
+  };
+
+  public type CampaignStatus = { #active; #paused; #ended };
+
+  public type Campaign = {
+    id : Nat;
+    advertiserEmail : Text;
+    name : Text;
+    budget : Nat;
+    dailyBudget : Nat;
+    bidAmount : Nat;
+    keywords : [Text];
+    destinationUrl : Text;
+    status : CampaignStatus;
+    impressions : Nat;
+    clicks : Nat;
+    spend : Nat;
+    createdAt : Int;
+  };
+
+  public type AdResult = {
+    campaignId : Nat;
+    name : Text;
+    destinationUrl : Text;
+    bidAmount : Nat;
+    score : Nat;
+  };
+
+  public type UserProfile = {
+    email : Text;
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────
 
   var nextId : Nat = 1;
@@ -77,7 +124,52 @@ actor {
   var blacklist : [BlacklistEntry] = [];
   var abuseCounter : [(Text, Nat)] = [];
   var rateLimitData : [(Text, [Int])] = [];
+
   var clickCounts : [(Text, Nat)] = [];
+
+  var advertiserProfiles : [AdvertiserProfile] = [];
+  var campaigns : [Campaign] = [];
+  var campaignIdCounter : Nat = 1;
+  var adsEnabled : Bool = false;
+  var adClickCooldowns : [(Text, Int)] = [];
+
+  var userProfiles : [(Principal, UserProfile)] = [];
+
+  // ─── User Profile Management ──────────────────────────────────────────────
+
+  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view profiles");
+    };
+    userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller }).map(func(entry) : UserProfile { entry.1 });
+  };
+
+  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Can only view your own profile");
+    };
+    userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == user }).map(func(entry) : UserProfile { entry.1 });
+  };
+
+  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save profiles");
+    };
+    var found = false;
+    userProfiles := userProfiles.map<(Principal, UserProfile), (Principal, UserProfile)>(
+      func(entry) {
+        if (entry.0 == caller) {
+          found := true;
+          (caller, profile);
+        } else {
+          entry;
+        };
+      }
+    );
+    if (not found) {
+      userProfiles := userProfiles.concat([(caller, profile)]);
+    };
+  };
 
   // ─── Security Logging ─────────────────────────────────────────────────────
 
@@ -110,9 +202,11 @@ actor {
 
   func setRateLimitTimestamps(key : Text, timestamps : [Int]) {
     var found = false;
-    rateLimitData := rateLimitData.map(func(entry) : (Text, [Int]) {
-      if (entry.0 == key) { found := true; (entry.0, timestamps) } else entry
-    });
+    rateLimitData := rateLimitData.map<(Text, [Int]), (Text, [Int])>(
+      func(entry) {
+        if (entry.0 == key) { found := true; (entry.0, timestamps) } else { entry };
+      }
+    );
     if (not found) {
       rateLimitData := rateLimitData.concat([(key, timestamps)]);
     };
@@ -271,9 +365,11 @@ actor {
 
   func incrementDomainAbuse(domain : Text) {
     var found = false;
-    abuseCounter := abuseCounter.map(func(entry) : (Text, Nat) {
-      if (entry.0 == domain) { found := true; (entry.0, entry.1 + 1) } else entry
-    });
+    abuseCounter := abuseCounter.map<(Text, Nat), (Text, Nat)>(
+      func(entry) {
+        if (entry.0 == domain) { found := true; (entry.0, entry.1 + 1) } else { entry };
+      }
+    );
     if (not found) {
       abuseCounter := abuseCounter.concat([(domain, 1)]);
     };
@@ -360,9 +456,11 @@ actor {
   };
 
   func removeFromIndex(siteId : Nat) {
-    let updated = indexTerms.map(func(entry) : (Text, [Nat]) {
-      (entry.0, entry.1.filter(func(id : Nat) : Bool { id != siteId }))
-    });
+    let updated = indexTerms.map(
+      func(entry) {
+        (entry.0, entry.1.filter(func(id : Nat) : Bool { id != siteId }))
+      }
+    );
     indexTerms := updated.filter(func(entry) : Bool { entry.1.size() > 0 });
   };
 
@@ -739,18 +837,6 @@ actor {
 
   // ─── Advertiser / Monetization System ─────────────────────────────────────
 
-  public type AdvertiserStatus = { #pending; #approved; #rejected };
-
-  public type AdvertiserProfile = {
-    email : Text;
-    status : AdvertiserStatus;
-    balance : Nat;
-    appliedAt : Int;
-    reviewedAt : ?Int;
-  };
-
-  var advertiserProfiles : [AdvertiserProfile] = [];
-
   // Apply to become an advertiser (called with user email)
   public func applyForAdvertiser(email : Text) : async () {
     if (email.size() == 0 or email.size() > 200) {
@@ -831,5 +917,343 @@ actor {
     };
   };
 
-};
+  // ─── Ad Engine ────────────────────────────────────────────────────────────
 
+  func getAdvertiser(email : Text) : ?AdvertiserProfile {
+    advertiserProfiles.find(func(p : AdvertiserProfile) : Bool { p.email == email })
+  };
+
+  func requireApprovedAdvertiser(email : Text) {
+    switch (getAdvertiser(email)) {
+      case (?profile) {
+        switch (profile.status) {
+          case (#approved) {
+            if (profile.balance == 0) {
+              Runtime.trap("Advertiser has no balance");
+            };
+          };
+          case (_) { Runtime.trap("Advertiser not approved") };
+        };
+      };
+      case (null) { Runtime.trap("Advertiser not found") };
+    };
+  };
+
+  func getCampaignOwnerEmail(campaignId : Nat) : ?Text {
+    switch (campaigns.find(func(c : Campaign) : Bool { c.id == campaignId })) {
+      case (?campaign) { ?campaign.advertiserEmail };
+      case (null) { null };
+    };
+  };
+
+  func requireCampaignOwnership(caller : Principal, campaignId : Nat) {
+    if (AccessControl.isAdmin(accessControlState, caller)) {
+      return;
+    };
+
+    switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
+      case (?profile) {
+        let userEmail = profile.1.email;
+        switch (getCampaignOwnerEmail(campaignId)) {
+          case (?ownerEmail) {
+            if (userEmail != ownerEmail) {
+              Runtime.trap("Unauthorized: Not campaign owner");
+            };
+          };
+          case (null) { Runtime.trap("Campaign not found") };
+        };
+      };
+      case (null) { Runtime.trap("User profile not found") };
+    };
+  };
+
+  // Create campaign
+  public shared ({ caller }) func createCampaign(
+    email : Text,
+    name : Text,
+    budget : Nat,
+    dailyBudget : Nat,
+    bidAmount : Nat,
+    keywords : [Text],
+    destinationUrl : Text
+  ) : async Campaign {
+    requireRegistered(caller);
+
+    // Verify caller owns this email
+    switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
+      case (?profile) {
+        if (profile.1.email != email) {
+          Runtime.trap("Unauthorized: Email does not match caller profile");
+        };
+      };
+      case (null) { Runtime.trap("User profile not found") };
+    };
+
+    requireApprovedAdvertiser(email);
+
+    if (name.size() == 0 or name.size() > 100) {
+      Runtime.trap("Invalid campaign name");
+    };
+    if (budget < 500) {
+      Runtime.trap("Minimum campaign budget is 500");
+    };
+    if (bidAmount < 5 or bidAmount > 500) {
+      Runtime.trap("Bid amount must be between 5 and 500");
+    };
+    if (keywords.size() == 0 or keywords.size() > 15) {
+      Runtime.trap("Invalid keywords array size");
+    };
+    for (kw in keywords.vals()) {
+      if (kw.size() == 0 or kw.size() > 50) {
+        Runtime.trap("Invalid keyword");
+      };
+    };
+    let id = campaignIdCounter;
+    campaignIdCounter += 1;
+    let campaign : Campaign = {
+      id;
+      advertiserEmail = email;
+      name;
+      budget;
+      dailyBudget;
+      bidAmount;
+      keywords;
+      destinationUrl;
+      status = #active;
+      impressions = 0;
+      clicks = 0;
+      spend = 0;
+      createdAt = Time.now();
+    };
+    campaigns := campaigns.concat([campaign]);
+    campaign;
+  };
+
+  // Update campaign
+  public shared ({ caller }) func updateCampaign(
+    campaignId : Nat,
+    name : Text,
+    budget : Nat,
+    dailyBudget : Nat,
+    bidAmount : Nat,
+    keywords : [Text],
+    destinationUrl : Text
+  ) : async Campaign {
+    requireRegistered(caller);
+    requireCampaignOwnership(caller, campaignId);
+
+    var found = false;
+    var updatedCampaign : ?Campaign = null;
+    campaigns := campaigns.map(func(c : Campaign) : Campaign {
+      if (c.id == campaignId) {
+        found := true;
+        let updated = {
+          c with
+          name;
+          budget;
+          dailyBudget;
+          bidAmount;
+          keywords;
+          destinationUrl;
+        };
+        updatedCampaign := ?updated;
+        updated;
+      } else { c };
+    });
+    if (not found) {
+      Runtime.trap("Campaign not found");
+    };
+    switch (updatedCampaign) {
+      case (null) { Runtime.trap("Campaign not found") };
+      case (?campaign) { campaign };
+    };
+  };
+
+  // Pause campaign
+  public shared ({ caller }) func pauseCampaign(campaignId : Nat) : async () {
+    requireRegistered(caller);
+    requireCampaignOwnership(caller, campaignId);
+
+    var found = false;
+    campaigns := campaigns.map(func(c : Campaign) : Campaign {
+      if (c.id == campaignId) {
+        found := true;
+        { c with status = #paused };
+      } else { c };
+    });
+    if (not found) {
+      Runtime.trap("Campaign not found");
+    };
+  };
+
+  // Resume campaign
+  public shared ({ caller }) func resumeCampaign(campaignId : Nat) : async () {
+    requireRegistered(caller);
+    requireCampaignOwnership(caller, campaignId);
+
+    var found = false;
+    campaigns := campaigns.map(func(c : Campaign) : Campaign {
+      if (c.id == campaignId) {
+        found := true;
+        { c with status = #active };
+      } else { c };
+    });
+    if (not found) {
+      Runtime.trap("Campaign not found");
+    };
+  };
+
+  // Get campaigns for a specific advertiser
+  public shared ({ caller }) func getMyCampaigns(email : Text) : async [Campaign] {
+    requireRegistered(caller);
+
+    // Verify caller owns this email
+    switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
+      case (?profile) {
+        if (profile.1.email != email and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized: Email does not match caller profile");
+        };
+      };
+      case (null) {
+        if (not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("User profile not found");
+        };
+      };
+    };
+
+    campaigns.filter(func(c : Campaign) : Bool { c.advertiserEmail == email });
+  };
+
+  // Admin: get all campaigns
+  public query ({ caller }) func getAllCampaigns() : async [Campaign] {
+    requireAdmin(caller);
+    campaigns;
+  };
+
+  // Get ads for search query
+  public func getAdsForSearch(searchQuery : Text) : async [AdResult] {
+    if (not adsEnabled) {
+      return [];
+    };
+    let trimmed = searchQuery.trim(#char ' ');
+    if (trimmed.size() == 0) { return [] };
+    let queryTokens = tokenize(trimmed);
+    var results : [AdResult] = [];
+    for (c in campaigns.vals()) {
+      switch (c.status) {
+        case (#active) {
+          switch (getAdvertiser(c.advertiserEmail)) {
+            case (?advertiser) {
+              if (advertiser.balance > 0) {
+                var keywordMatchScore = 0;
+                for (token in queryTokens.vals()) {
+                  for (kw in c.keywords.vals()) {
+                    if (kw.toLower().contains(#text token)) {
+                      keywordMatchScore += 1;
+                    };
+                  };
+                };
+                if (keywordMatchScore > 0) {
+                  let score = c.bidAmount * keywordMatchScore;
+                  let adResult : AdResult = {
+                    campaignId = c.id;
+                    name = c.name;
+                    destinationUrl = c.destinationUrl;
+                    bidAmount = c.bidAmount;
+                    score;
+                  };
+                  results := results.concat([adResult]);
+                };
+              };
+            };
+            case (null) {};
+          };
+        };
+        case (_) {};
+      };
+    };
+    let sorted = results.sort(func(a : AdResult, b : AdResult) : { #less; #equal; #greater } {
+      if (a.score > b.score) #less else if (a.score < b.score) #greater else #equal
+    });
+    if (sorted.size() > 2) {
+      [sorted[0], sorted[1]];
+    } else {
+      sorted;
+    };
+  };
+
+  // Record ad impression
+  public func recordAdImpression(campaignId : Nat) : async () {
+    var found = false;
+    campaigns := campaigns.map(func(c : Campaign) : Campaign {
+      if (c.id == campaignId) {
+        found := true;
+        { c with impressions = c.impressions + 1 };
+      } else { c };
+    });
+    if (not found) {
+      Runtime.trap("Campaign not found");
+    };
+  };
+
+  // Record ad click with cooldown
+  public func recordAdClick(campaignId : Nat, userSession : Text) : async Result<(), Text> {
+    let key = userSession # "_" # campaignId.toText();
+    let now = Time.now();
+    let cooldownNs = 30_000_000_000;
+    var lastClick : ?Int = null;
+    var foundCooldown = false;
+    adClickCooldowns := adClickCooldowns.map<(Text, Int), (Text, Int)>(
+      func(entry) {
+        if (entry.0 == key) {
+          foundCooldown := true;
+          lastClick := ?entry.1;
+          (key, now);
+        } else { entry };
+      }
+    );
+    if (not foundCooldown) {
+      adClickCooldowns := adClickCooldowns.concat([(key, now)]);
+    } else {
+      switch (lastClick) {
+        case (?timestamp) {
+          if (now - timestamp < cooldownNs) {
+            return #err("Cooldown active");
+          };
+        };
+        case (null) {};
+      };
+    };
+    var found = false;
+    var bidAmount : Nat = 0;
+    var advertiserEmail : Text = "";
+    campaigns := campaigns.map(func(c : Campaign) : Campaign {
+      if (c.id == campaignId) {
+        found := true;
+        bidAmount := c.bidAmount;
+        advertiserEmail := c.advertiserEmail;
+        { c with clicks = c.clicks + 1; spend = c.spend + c.bidAmount };
+      } else { c };
+    });
+    if (not found) {
+      return #err("Campaign not found");
+    };
+    advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
+      if (p.email == advertiserEmail) {
+        { p with balance = if (p.balance >= bidAmount) { p.balance - bidAmount } else { 0 } };
+      } else { p };
+    });
+    #ok(());
+  };
+
+  // Get adsEnabled flag
+  public query func getAdsEnabled() : async Bool {
+    adsEnabled;
+  };
+
+  // Admin: set adsEnabled flag
+  public shared ({ caller }) func setAdsEnabled(enabled : Bool) : async () {
+    requireAdmin(caller);
+    adsEnabled := enabled;
+  };
+};

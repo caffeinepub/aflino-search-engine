@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AdResult,
   AdvertiserProfile,
   BlacklistEntry,
-  ReviewAction,
+  Campaign,
   SecurityLog,
   SeedEntry,
+  Variant_remove_approve_block,
   Website,
 } from "../backend.d";
 import { useActor } from "./useActor";
@@ -228,12 +230,13 @@ export function useAssignRole() {
       if (!actor) throw new Error("Not connected");
       const { Principal } = await import("@dfinity/principal");
       const p = Principal.fromText(data.principal);
+      const { UserRole } = await import("../backend.d");
       const role =
         data.role === "admin"
-          ? { admin: null as null }
+          ? UserRole.admin
           : data.role === "user"
-            ? { user: null as null }
-            : { guest: null as null };
+            ? UserRole.user
+            : UserRole.guest;
       return actor.assignCallerUserRole(p, role);
     },
   });
@@ -311,9 +314,14 @@ export function useReviewFlaggedDomain() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { domain: string; action: ReviewAction }) => {
+    mutationFn: async (data: {
+      domain: string;
+      action: { remove: null } | { approve: null } | { block: null };
+    }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.reviewFlaggedDomain(data.domain, data.action);
+      // Cast to the backend enum type - runtime values match
+      const action = data.action as unknown as Variant_remove_approve_block;
+      return actor.reviewFlaggedDomain(data.domain, action);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["blacklist"] });
@@ -353,8 +361,9 @@ export function useGetMyAdvertiserProfile(email: string | null) {
     queryFn: async () => {
       if (!actor || !email) return null;
       const result = await actor.getMyAdvertiserProfile(email);
-      // Motoko optional returns as [] or [value]
-      if (Array.isArray(result)) return result[0] ?? null;
+      // Handle both optional array form and direct null form
+      if (Array.isArray(result))
+        return ((result as unknown[])[0] as AdvertiserProfile | null) ?? null;
       return result ?? null;
     },
     enabled: !!actor && !isFetching && !!email,
@@ -418,6 +427,153 @@ export function useAddAdvertiserBalance() {
       void queryClient.invalidateQueries({
         queryKey: ["advertiserApplications"],
       });
+    },
+  });
+}
+
+// ── Ad Engine hooks ────────────────────────────────────────────
+
+export function useGetAdsForSearch(query: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdResult[]>({
+    queryKey: ["adsForSearch", query],
+    queryFn: async () => {
+      if (!actor || !query.trim()) return [];
+      return actor.getAdsForSearch(query);
+    },
+    enabled: !!actor && !isFetching && !!query.trim(),
+  });
+}
+
+export function useGetAllCampaigns() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Campaign[]>({
+    queryKey: ["allCampaigns"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllCampaigns();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useGetMyCampaigns(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Campaign[]>({
+    queryKey: ["myCampaigns", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      return actor.getMyCampaigns(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useCreateCampaign() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      email: string;
+      name: string;
+      budget: number;
+      dailyBudget: number;
+      bidAmount: number;
+      keywords: string[];
+      destinationUrl: string;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.createCampaign(
+        data.email,
+        data.name,
+        BigInt(data.budget),
+        BigInt(data.dailyBudget),
+        BigInt(data.bidAmount),
+        data.keywords,
+        data.destinationUrl,
+      );
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["myCampaigns", variables.email],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["allCampaigns"] });
+    },
+  });
+}
+
+export function usePauseCampaign() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (campaignId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.pauseCampaign(campaignId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["myCampaigns"] });
+      void queryClient.invalidateQueries({ queryKey: ["allCampaigns"] });
+    },
+  });
+}
+
+export function useResumeCampaign() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (campaignId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.resumeCampaign(campaignId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["myCampaigns"] });
+      void queryClient.invalidateQueries({ queryKey: ["allCampaigns"] });
+    },
+  });
+}
+
+export function useRecordAdImpression() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (campaignId: bigint) => {
+      if (!actor) return;
+      await actor.recordAdImpression(campaignId);
+    },
+  });
+}
+
+export function useRecordAdClick() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { campaignId: bigint; userSession: string }) => {
+      if (!actor) return null;
+      return actor.recordAdClick(data.campaignId, data.userSession);
+    },
+  });
+}
+
+export function useGetAdsEnabled() {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["adsEnabled"],
+    queryFn: async () => {
+      if (!actor) return false;
+      return actor.getAdsEnabled();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetAdsEnabled() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.setAdsEnabled(enabled);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["adsEnabled"] });
     },
   });
 }

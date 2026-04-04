@@ -215,7 +215,7 @@ export default function HomePage() {
     logout: authLogout,
   } = useAuth();
 
-  const isAdmin = authRole === "admin" || (role && "admin" in role);
+  const isAdmin = authRole === "admin" || role === "admin";
   const isUserLoggedIn = isLocalAuth && authRole === "user";
 
   // Admin-configurable logo URLs from localStorage

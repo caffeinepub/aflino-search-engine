@@ -10,7 +10,165 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
-export interface _SERVICE {}
+export interface AdResult {
+  'name' : string,
+  'campaignId' : bigint,
+  'score' : bigint,
+  'bidAmount' : bigint,
+  'destinationUrl' : string,
+}
+export interface AdvertiserProfile {
+  'status' : AdvertiserStatus,
+  'appliedAt' : bigint,
+  'balance' : bigint,
+  'reviewedAt' : [] | [bigint],
+  'email' : string,
+}
+export type AdvertiserStatus = { 'pending' : null } |
+  { 'approved' : null } |
+  { 'rejected' : null };
+export interface BlacklistEntry {
+  'status' : BlacklistStatus,
+  'domain' : string,
+  'reviewedBy' : [] | [string],
+  'addedAt' : bigint,
+  'reason' : string,
+}
+export type BlacklistStatus = { 'blocked' : null } |
+  { 'flagged' : null };
+export interface Campaign {
+  'id' : bigint,
+  'status' : CampaignStatus,
+  'clicks' : bigint,
+  'name' : string,
+  'createdAt' : bigint,
+  'advertiserEmail' : string,
+  'impressions' : bigint,
+  'bidAmount' : bigint,
+  'keywords' : Array<string>,
+  'spend' : bigint,
+  'dailyBudget' : bigint,
+  'destinationUrl' : string,
+  'budget' : bigint,
+}
+export type CampaignStatus = { 'active' : null } |
+  { 'ended' : null } |
+  { 'paused' : null };
+export type Result = { 'ok' : null } |
+  { 'err' : string };
+export interface SecurityLog {
+  'id' : bigint,
+  'logType' : string,
+  'timestamp' : bigint,
+  'details' : string,
+  'principalText' : string,
+}
+export interface SeedEntry {
+  'url' : string,
+  'title' : string,
+  'description' : string,
+  'keywords' : Array<string>,
+}
+export interface Stats {
+  'total' : bigint,
+  'pending' : bigint,
+  'approved' : bigint,
+}
+export interface TransformationInput {
+  'context' : Uint8Array,
+  'response' : http_request_result,
+}
+export interface TransformationOutput {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
+export interface UserProfile { 'email' : string }
+export type UserRole = { 'admin' : null } |
+  { 'user' : null } |
+  { 'guest' : null };
+export interface Website {
+  'id' : bigint,
+  'url' : string,
+  'status' : WebsiteStatus,
+  'title' : string,
+  'ownerPrincipal' : Principal,
+  'approvedAt' : [] | [bigint],
+  'verificationToken' : string,
+  'submittedAt' : bigint,
+  'description' : string,
+  'isSeed' : boolean,
+  'keywords' : Array<string>,
+  'isVerified' : boolean,
+}
+export type WebsiteStatus = { 'pending' : null } |
+  { 'approved' : null } |
+  { 'rejected' : null };
+export interface http_header { 'value' : string, 'name' : string }
+export interface http_request_result {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
+export interface _SERVICE {
+  '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
+  'addAdvertiserBalance' : ActorMethod<[string, bigint], undefined>,
+  'addToBlacklist' : ActorMethod<[string, string], undefined>,
+  'applyForAdvertiser' : ActorMethod<[string], undefined>,
+  'approveAdvertiser' : ActorMethod<[string], undefined>,
+  'approveWebsite' : ActorMethod<[bigint], Website>,
+  'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'createCampaign' : ActorMethod<
+    [string, string, bigint, bigint, bigint, Array<string>, string],
+    Campaign
+  >,
+  'deleteWebsite' : ActorMethod<[bigint], undefined>,
+  'editWebsite' : ActorMethod<[bigint, string, string, Array<string>], Website>,
+  'getAdsEnabled' : ActorMethod<[], boolean>,
+  'getAdsForSearch' : ActorMethod<[string], Array<AdResult>>,
+  'getAllAdvertiserApplications' : ActorMethod<[], Array<AdvertiserProfile>>,
+  'getAllCampaigns' : ActorMethod<[], Array<Campaign>>,
+  'getAllWebsites' : ActorMethod<[], Array<Website>>,
+  'getBlacklist' : ActorMethod<[], Array<BlacklistEntry>>,
+  'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
+  'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getFlaggedDomains' : ActorMethod<[], Array<BlacklistEntry>>,
+  'getMyAdvertiserProfile' : ActorMethod<[string], [] | [AdvertiserProfile]>,
+  'getMyCampaigns' : ActorMethod<[string], Array<Campaign>>,
+  'getMyWebsites' : ActorMethod<[], Array<Website>>,
+  'getPendingWebsites' : ActorMethod<[], Array<Website>>,
+  'getSecurityLogs' : ActorMethod<[], Array<SecurityLog>>,
+  'getStats' : ActorMethod<[], Stats>,
+  'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getVerificationToken' : ActorMethod<[bigint], string>,
+  'importSeedData' : ActorMethod<[Array<SeedEntry>], bigint>,
+  'isCallerAdmin' : ActorMethod<[], boolean>,
+  'pauseCampaign' : ActorMethod<[bigint], undefined>,
+  'recordAdClick' : ActorMethod<[bigint, string], Result>,
+  'recordAdImpression' : ActorMethod<[bigint], undefined>,
+  'recordClick' : ActorMethod<[string], undefined>,
+  'rejectAdvertiser' : ActorMethod<[string], undefined>,
+  'rejectWebsite' : ActorMethod<[bigint], Website>,
+  'removeFromBlacklist' : ActorMethod<[string], undefined>,
+  'resumeCampaign' : ActorMethod<[bigint], undefined>,
+  'reviewFlaggedDomain' : ActorMethod<
+    [string, { 'remove' : null } | { 'approve' : null } | { 'block' : null }],
+    undefined
+  >,
+  'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'searchWebsites' : ActorMethod<[string], Array<Website>>,
+  'setAdsEnabled' : ActorMethod<[boolean], undefined>,
+  'submitWebsite' : ActorMethod<
+    [string, string, string, Array<string>],
+    Website
+  >,
+  'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
+  'updateCampaign' : ActorMethod<
+    [bigint, string, bigint, bigint, bigint, Array<string>, string],
+    Campaign
+  >,
+  'verifyDomain' : ActorMethod<[bigint], boolean>,
+}
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];
 export declare const idlFactory: IDL.InterfaceFactory;

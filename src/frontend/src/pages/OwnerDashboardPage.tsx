@@ -24,6 +24,8 @@ import {
   Globe,
   Loader2,
   LogOut,
+  Pause,
+  Play,
   Plus,
   ShieldCheck,
   TrendingUp,
@@ -31,16 +33,20 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { Website } from "../backend.d";
+import type { Campaign, Website } from "../backend.d";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useApplyForAdvertiser,
+  useCreateCampaign,
   useGetCallerRole,
   useGetMyAdvertiserProfile,
+  useGetMyCampaigns,
   useGetMyWebsites,
   useGetVerificationToken,
+  usePauseCampaign,
+  useResumeCampaign,
   useSubmitWebsite,
   useVerifyDomain,
 } from "../hooks/useQueries";
@@ -51,6 +57,11 @@ import {
   validateTitle,
   validateUrl,
 } from "../utils/security";
+
+// Helper: ICP runtime returns variant objects; cast for in-operator checks
+function hasKey(obj: unknown, key: string): boolean {
+  return typeof obj === "object" && obj !== null && key in obj;
+}
 
 type SidebarTab = "my-websites" | "submit" | "account" | "monetization";
 
@@ -169,6 +180,378 @@ function VerificationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Campaign Status Badge ────────────────────────────────────────────
+
+function CampaignStatusBadge({ campaign }: { campaign: Campaign }) {
+  const isActive = hasKey(campaign.status, "active");
+  const isPaused = hasKey(campaign.status, "paused");
+
+  if (isActive) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+        Active
+      </span>
+    );
+  }
+  if (isPaused) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+        Paused
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+      Ended
+    </span>
+  );
+}
+
+// ── Create Campaign Form ────────────────────────────────────────────
+
+function CreateCampaignForm({
+  email,
+  onSuccess,
+  onCancel,
+}: {
+  email: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [budget, setBudget] = useState("");
+  const [dailyBudget, setDailyBudget] = useState("");
+  const [bidAmount, setBidAmount] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [destinationUrl, setDestinationUrl] = useState("");
+
+  const createMutation = useCreateCampaign();
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      toast.error("Campaign name is required");
+      return;
+    }
+    const budgetNum = Number.parseInt(budget, 10);
+    const dailyNum = Number.parseInt(dailyBudget, 10);
+    const bidNum = Number.parseInt(bidAmount, 10);
+    if (Number.isNaN(budgetNum) || budgetNum <= 0) {
+      toast.error("Valid budget is required");
+      return;
+    }
+    if (Number.isNaN(dailyNum) || dailyNum <= 0) {
+      toast.error("Valid daily budget is required");
+      return;
+    }
+    if (Number.isNaN(bidNum) || bidNum < 1) {
+      toast.error("CPC bid must be at least ₹1");
+      return;
+    }
+    const kwList = keywords
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (kwList.length === 0) {
+      toast.error("At least one keyword is required");
+      return;
+    }
+    if (!destinationUrl.trim()) {
+      toast.error("Destination URL is required");
+      return;
+    }
+    try {
+      await createMutation.mutateAsync({
+        email,
+        name: name.trim(),
+        budget: budgetNum,
+        dailyBudget: dailyNum,
+        bidAmount: bidNum,
+        keywords: kwList,
+        destinationUrl: destinationUrl.trim(),
+      });
+      toast.success("Campaign created successfully!");
+      onSuccess();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to create campaign",
+      );
+    }
+  };
+
+  return (
+    <div
+      className="rounded-xl border border-border p-5 space-y-4 bg-white"
+      data-ocid="campaign.create.panel"
+    >
+      <h3 className="text-sm font-semibold text-foreground">Create Campaign</h3>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="sm:col-span-2 space-y-1.5">
+          <Label htmlFor="campaign-name">Campaign Name</Label>
+          <Input
+            id="campaign-name"
+            placeholder="My Product Campaign"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            data-ocid="campaign.name.input"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="campaign-budget">Total Budget (₹)</Label>
+          <Input
+            id="campaign-budget"
+            type="number"
+            min="1"
+            placeholder="5000"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            data-ocid="campaign.budget.input"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="campaign-daily">Daily Budget (₹)</Label>
+          <Input
+            id="campaign-daily"
+            type="number"
+            min="1"
+            placeholder="500"
+            value={dailyBudget}
+            onChange={(e) => setDailyBudget(e.target.value)}
+            data-ocid="campaign.daily_budget.input"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="campaign-bid">CPC Bid (₹)</Label>
+          <Input
+            id="campaign-bid"
+            type="number"
+            min="1"
+            placeholder="10"
+            value={bidAmount}
+            onChange={(e) => setBidAmount(e.target.value)}
+            data-ocid="campaign.bid.input"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="campaign-keywords">Keywords</Label>
+          <Input
+            id="campaign-keywords"
+            placeholder="shoes, running, sports"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            data-ocid="campaign.keywords.input"
+          />
+          <p className="text-xs text-muted-foreground">Comma-separated</p>
+        </div>
+
+        <div className="sm:col-span-2 space-y-1.5">
+          <Label htmlFor="campaign-url">Destination URL</Label>
+          <Input
+            id="campaign-url"
+            type="url"
+            placeholder="https://yourwebsite.com/landing"
+            value={destinationUrl}
+            onChange={(e) => setDestinationUrl(e.target.value)}
+            data-ocid="campaign.url.input"
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          onClick={() => void handleSubmit()}
+          disabled={createMutation.isPending}
+          data-ocid="campaign.create.submit_button"
+        >
+          {createMutation.isPending ? (
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              Creating…
+            </>
+          ) : (
+            "Create Campaign"
+          )}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onCancel}
+          data-ocid="campaign.create.cancel_button"
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Campaigns Tab Content ────────────────────────────────────────────
+
+function CampaignsSection({ email }: { email: string }) {
+  const { data: campaigns = [], isLoading } = useGetMyCampaigns(email);
+  const pauseMutation = usePauseCampaign();
+  const resumeMutation = useResumeCampaign();
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  const handlePause = async (id: bigint) => {
+    try {
+      await pauseMutation.mutateAsync(id);
+      toast.success("Campaign paused");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to pause");
+    }
+  };
+
+  const handleResume = async (id: bigint) => {
+    try {
+      await resumeMutation.mutateAsync(id);
+      toast.success("Campaign resumed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Coming soon notice */}
+      <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+        <span className="text-base leading-5 flex-shrink-0">ℹ️</span>
+        <p className="text-xs">
+          Campaign ads will go live once the system is activated by admin. You
+          can set up campaigns now and they will be ready when activated.
+        </p>
+      </div>
+
+      {/* Create Campaign toggle */}
+      {!showCreateForm && (
+        <Button
+          size="sm"
+          onClick={() => setShowCreateForm(true)}
+          className="gap-1.5"
+          data-ocid="campaign.create.primary_button"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Create Campaign
+        </Button>
+      )}
+
+      {/* Create Campaign form */}
+      {showCreateForm && (
+        <CreateCampaignForm
+          email={email}
+          onSuccess={() => setShowCreateForm(false)}
+          onCancel={() => setShowCreateForm(false)}
+        />
+      )}
+
+      {/* Campaign list */}
+      {isLoading ? (
+        <div
+          className="flex items-center gap-2 py-4 text-muted-foreground"
+          data-ocid="campaign.list.loading_state"
+        >
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm">Loading campaigns…</span>
+        </div>
+      ) : campaigns.length === 0 ? (
+        <div
+          className="rounded-xl border border-border p-8 text-center"
+          data-ocid="campaign.list.empty_state"
+        >
+          <TrendingUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm font-medium mb-0.5">No campaigns yet</p>
+          <p className="text-xs text-muted-foreground">
+            Create your first campaign above to get started
+          </p>
+        </div>
+      ) : (
+        <div
+          className="rounded-xl border border-border overflow-hidden"
+          data-ocid="campaign.list.table"
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead>Campaign</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Budget</TableHead>
+                <TableHead>CPC</TableHead>
+                <TableHead>Impr / Clicks</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {campaigns.map((campaign, i) => (
+                <TableRow
+                  key={campaign.id.toString()}
+                  data-ocid={`campaign.item.${i + 1}`}
+                >
+                  <TableCell>
+                    <div>
+                      <p className="text-sm font-medium">{campaign.name}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                        {campaign.destinationUrl
+                          .replace(/^https?:\/\//, "")
+                          .slice(0, 30)}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <CampaignStatusBadge campaign={campaign} />
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    ₹{campaign.budget.toString()}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    ₹{campaign.bidAmount.toString()}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {campaign.impressions.toString()} /{" "}
+                    {campaign.clicks.toString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {hasKey(campaign.status, "active") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handlePause(campaign.id)}
+                        disabled={pauseMutation.isPending}
+                        className="h-7 px-2 text-xs gap-1"
+                        data-ocid={`campaign.pause.button.${i + 1}`}
+                      >
+                        <Pause className="h-3 w-3" />
+                        Pause
+                      </Button>
+                    )}
+                    {hasKey(campaign.status, "paused") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleResume(campaign.id)}
+                        disabled={resumeMutation.isPending}
+                        className="h-7 px-2 text-xs gap-1"
+                        data-ocid={`campaign.resume.button.${i + 1}`}
+                      >
+                        <Play className="h-3 w-3" />
+                        Resume
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -295,10 +678,11 @@ export default function OwnerDashboardPage() {
 
   // Derive advertiser status
   const isApproved =
-    advertiserProfile && "approved" in advertiserProfile.status;
-  const isPending = advertiserProfile && "pending" in advertiserProfile.status;
+    advertiserProfile && hasKey(advertiserProfile.status, "approved");
+  const isPending =
+    advertiserProfile && hasKey(advertiserProfile.status, "pending");
   const isRejected =
-    advertiserProfile && "rejected" in advertiserProfile.status;
+    advertiserProfile && hasKey(advertiserProfile.status, "rejected");
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -621,7 +1005,8 @@ export default function OwnerDashboardPage() {
                 </p>
               </div>
 
-              <div className="max-w-lg space-y-4">
+              <div className="max-w-2xl space-y-4">
+                {/* Advertiser Status Card */}
                 <div
                   className="rounded-xl border border-border p-6 space-y-5"
                   data-ocid="monetization.panel"
@@ -689,12 +1074,6 @@ export default function OwnerDashboardPage() {
                           or reject it soon.
                         </p>
                       )}
-                      {isApproved && (
-                        <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                          Your account is approved! Campaign creation coming
-                          soon.
-                        </p>
-                      )}
                       {isRejected && (
                         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                           Your application was rejected. Contact support for
@@ -727,16 +1106,28 @@ export default function OwnerDashboardPage() {
                   )}
                 </div>
 
+                {/* Campaign Management — only for approved advertisers */}
+                {isApproved && userEmail && (
+                  <div className="space-y-3">
+                    <h2 className="font-semibold text-base">
+                      Campaign Management
+                    </h2>
+                    <CampaignsSection email={userEmail} />
+                  </div>
+                )}
+
                 {/* How it works */}
-                <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
-                  <p className="font-medium mb-0.5">How it works</p>
-                  <ol className="list-decimal list-inside space-y-1 text-xs text-blue-700 mt-1">
-                    <li>Apply to become an advertiser</li>
-                    <li>Admin reviews and approves your application</li>
-                    <li>Admin adds balance to your account</li>
-                    <li>Create campaigns and reach users (coming soon)</li>
-                  </ol>
-                </div>
+                {!isApproved && (
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+                    <p className="font-medium mb-0.5">How it works</p>
+                    <ol className="list-decimal list-inside space-y-1 text-xs text-blue-700 mt-1">
+                      <li>Apply to become an advertiser</li>
+                      <li>Admin reviews and approves your application</li>
+                      <li>Admin adds balance to your account</li>
+                      <li>Create campaigns and reach users</li>
+                    </ol>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -780,9 +1171,9 @@ export default function OwnerDashboardPage() {
                       ? "Administrator"
                       : auth.role === "advertiser"
                         ? "Advertiser"
-                        : role && "admin" in role
+                        : role === "admin"
                           ? "Administrator"
-                          : role && "user" in role
+                          : role === "user"
                             ? "Website Owner"
                             : "User"}
                   </p>

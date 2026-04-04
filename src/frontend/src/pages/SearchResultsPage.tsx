@@ -3,20 +3,39 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Search,
   User,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { Website } from "../backend.d";
+import type { AdResult, Website } from "../backend.d";
 import { useAuth } from "../context/AuthContext";
-import { useRecordClick, useSearchWebsites } from "../hooks/useQueries";
+import {
+  useGetAdsEnabled,
+  useGetAdsForSearch,
+  useRecordAdClick,
+  useRecordAdImpression,
+  useRecordClick,
+  useSearchWebsites,
+} from "../hooks/useQueries";
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────
 
 const RESULTS_PER_PAGE = 10;
 const SKELETON_KEYS = ["sk-1", "sk-2", "sk-3", "sk-4", "sk-5"];
 
-// ── Keyword highlight utility ─────────────────────────────────────────────────────
+// Session ID for click fraud prevention
+function getOrCreateSessionId(): string {
+  let sessionId = sessionStorage.getItem("aflino_session");
+  if (!sessionId) {
+    sessionId =
+      Math.random().toString(36).substring(2) + Date.now().toString(36);
+    sessionStorage.setItem("aflino_session", sessionId);
+  }
+  return sessionId;
+}
+
+// ── Keyword highlight utility ─────────────────────────────────────────────
 
 interface TextSegment {
   text: string;
@@ -73,7 +92,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
-// ── Skeleton loader ───────────────────────────────────────────────────────────────
+// ── Skeleton loader ─────────────────────────────────────────────────────
 
 function ResultSkeleton() {
   return (
@@ -86,7 +105,113 @@ function ResultSkeleton() {
   );
 }
 
-// ── Single result item ────────────────────────────────────────────────────────────
+// ── Sponsored Section ─────────────────────────────────────────────────
+
+function SponsoredSection({
+  query,
+  adsEnabled,
+  ads,
+}: {
+  query: string;
+  adsEnabled: boolean;
+  ads: AdResult[];
+}) {
+  const { mutate: recordAdImpression } = useRecordAdImpression();
+  const { mutate: recordAdClick } = useRecordAdClick();
+
+  // Fire impressions once when real ads are shown
+  useEffect(() => {
+    if (!adsEnabled || ads.length === 0) return;
+    for (const ad of ads.slice(0, 2)) {
+      recordAdImpression(ad.campaignId);
+    }
+  }, [adsEnabled, ads, recordAdImpression]);
+
+  const handleAdClick = (ad: AdResult) => {
+    const sessionId = getOrCreateSessionId();
+    recordAdClick({ campaignId: ad.campaignId, userSession: sessionId });
+    window.open(ad.destinationUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const displayAds = adsEnabled ? ads.slice(0, 2) : [];
+  const showPlaceholder = !adsEnabled || displayAds.length === 0;
+
+  return (
+    <div className="mb-5" data-ocid="search.sponsored.section">
+      {/* Section label */}
+      <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-widest mb-2">
+        Sponsored
+      </p>
+
+      <div className="rounded-xl border border-[#F3F4F6] bg-[#FAFAFA] overflow-hidden">
+        {showPlaceholder ? (
+          // Placeholder card — system is ready but not yet active
+          <div
+            className="px-4 py-3 flex items-start gap-3"
+            data-ocid="search.sponsored.placeholder"
+          >
+            <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded border border-[#D1D5DB] text-[9px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+              Ad
+            </span>
+            <div>
+              <p className="text-sm font-medium text-[#374151]">
+                Sponsored{" "}
+                <span className="text-[#9CA3AF] font-normal text-xs">
+                  (Coming Soon)
+                </span>
+              </p>
+              <p className="text-xs text-[#6B7280] mt-0.5">
+                Advertise your product on Aflino Search
+              </p>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">
+                Sponsored results will appear here soon
+              </p>
+            </div>
+          </div>
+        ) : (
+          // Real ad cards
+          displayAds.map((ad, i) => {
+            const displayUrl = ad.destinationUrl
+              .replace(/^https?:\/\//, "")
+              .replace(/\/+$/, "");
+            return (
+              <div
+                key={ad.campaignId.toString()}
+                className={`px-4 py-3 flex items-start gap-3 ${
+                  i < displayAds.length - 1 ? "border-b border-[#F3F4F6]" : ""
+                }`}
+                data-ocid={`search.sponsored.item.${i + 1}`}
+              >
+                <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded border border-[#D1D5DB] text-[9px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+                  Ad
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-[#22C55E] truncate mb-0.5">
+                    {displayUrl}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleAdClick(ad)}
+                    className="text-base font-medium text-[#006AFF] hover:underline leading-snug flex items-center gap-1 text-left"
+                    data-ocid={`search.sponsored.link.${i + 1}`}
+                  >
+                    <HighlightedText text={ad.name} query={query} />
+                    <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-50" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Thin divider between sponsored and organic */}
+      <div className="mt-4 mb-1 border-b border-[#F3F4F6]" />
+    </div>
+  );
+}
+
+// ── Single result item ─────────────────────────────────────────────────
 
 function ResultItem({
   website,
@@ -139,7 +264,7 @@ function ResultItem({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────
 
 export default function SearchResultsPage() {
   const navigate = useNavigate();
@@ -153,6 +278,8 @@ export default function SearchResultsPage() {
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: results = [], isLoading } = useSearchWebsites(q);
+  const { data: ads = [] } = useGetAdsForSearch(q);
+  const { data: adsEnabled = false } = useGetAdsEnabled();
   const { mutate: recordClick } = useRecordClick();
   const {
     isAuthenticated: isLocalAuth,
@@ -221,6 +348,8 @@ export default function SearchResultsPage() {
     (currentPage - 1) * RESULTS_PER_PAGE,
     currentPage * RESULTS_PER_PAGE,
   );
+
+  const hasResults = !isLoading && results.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -429,6 +558,11 @@ export default function SearchResultsPage() {
               Enter a search term above to get started.
             </p>
           </div>
+        )}
+
+        {/* Sponsored Section — shown when there are results */}
+        {hasResults && q && (
+          <SponsoredSection query={q} adsEnabled={adsEnabled} ads={ads} />
         )}
 
         {/* Results list */}

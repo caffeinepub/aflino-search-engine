@@ -7,119 +7,169 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-
-export type WebsiteStatus = { pending: null } | { approved: null } | { rejected: null };
-
+export interface UserProfile {
+    email: string;
+}
+export interface TransformationOutput {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<http_header>;
+}
+export interface AdvertiserProfile {
+    status: AdvertiserStatus;
+    appliedAt: bigint;
+    balance: bigint;
+    reviewedAt?: bigint;
+    email: string;
+}
+export interface BlacklistEntry {
+    status: BlacklistStatus;
+    domain: string;
+    reviewedBy?: string;
+    addedAt: bigint;
+    reason: string;
+}
+export interface Stats {
+    total: bigint;
+    pending: bigint;
+    approved: bigint;
+}
 export interface Website {
     id: bigint;
     url: string;
-    title: string;
-    description: string;
-    keywords: string[];
     status: WebsiteStatus;
+    title: string;
     ownerPrincipal: Principal;
+    approvedAt?: bigint;
     verificationToken: string;
-    isVerified: boolean;
-    isSeed: boolean;
     submittedAt: bigint;
-    approvedAt: Option<bigint>;
+    description: string;
+    isSeed: boolean;
+    keywords: Array<string>;
+    isVerified: boolean;
 }
-
+export interface http_header {
+    value: string;
+    name: string;
+}
+export interface http_request_result {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<http_header>;
+}
+export interface SecurityLog {
+    id: bigint;
+    logType: string;
+    timestamp: bigint;
+    details: string;
+    principalText: string;
+}
+export type Result = {
+    __kind__: "ok";
+    ok: null;
+} | {
+    __kind__: "err";
+    err: string;
+};
+export interface TransformationInput {
+    context: Uint8Array;
+    response: http_request_result;
+}
+export interface Campaign {
+    id: bigint;
+    status: CampaignStatus;
+    clicks: bigint;
+    name: string;
+    createdAt: bigint;
+    advertiserEmail: string;
+    impressions: bigint;
+    bidAmount: bigint;
+    keywords: Array<string>;
+    spend: bigint;
+    dailyBudget: bigint;
+    destinationUrl: string;
+    budget: bigint;
+}
+export interface AdResult {
+    name: string;
+    campaignId: bigint;
+    score: bigint;
+    bidAmount: bigint;
+    destinationUrl: string;
+}
 export interface SeedEntry {
     url: string;
     title: string;
     description: string;
-    keywords: string[];
+    keywords: Array<string>;
 }
-
-export interface Stats {
-    total: bigint;
-    approved: bigint;
-    pending: bigint;
+export enum BlacklistStatus {
+    blocked = "blocked",
+    flagged = "flagged"
 }
-
-export interface SecurityLog {
-    id: bigint;
-    timestamp: bigint;
-    logType: string;
-    principalText: string;
-    details: string;
+export enum CampaignStatus {
+    active = "active",
+    ended = "ended",
+    paused = "paused"
 }
-
-export type BlacklistStatusVariant = { flagged: null } | { blocked: null };
-
-export interface BlacklistEntry {
-    domain: string;
-    status: BlacklistStatusVariant;
-    reason: string;
-    addedAt: bigint;
-    reviewedBy: Option<string>;
+export enum UserRole {
+    admin = "admin",
+    user = "user",
+    guest = "guest"
 }
-
-export type ReviewAction = { approve: null } | { block: null } | { remove: null };
-
-export interface AccessControlUserRole {
-    // from authorization mixin
+export enum Variant_remove_approve_block {
+    remove = "remove",
+    approve = "approve",
+    block = "block"
 }
-
-export type AdvertiserStatusVariant = { pending: null } | { approved: null } | { rejected: null };
-
-export interface AdvertiserProfile {
-    email: string;
-    status: AdvertiserStatusVariant;
-    balance: bigint;
-    appliedAt: bigint;
-    reviewedAt: Option<bigint>;
+export enum WebsiteStatus {
+    pending = "pending",
+    approved = "approved",
+    rejected = "rejected"
 }
-
 export interface backendInterface {
-    // Authorization (from mixin)
-    _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
-    getCallerUserRole(): Promise<{ admin: null } | { user: null } | { guest: null }>;
-    assignCallerUserRole(user: Principal, role: { admin: null } | { user: null } | { guest: null }): Promise<void>;
-    isCallerAdmin(): Promise<boolean>;
-
-    // Search (public)
-    searchWebsites(searchQuery: string): Promise<Website[]>;
-    getStats(): Promise<Stats>;
-
-    // Website submission
-    submitWebsite(url: string, title: string, description: string, keywords: string[]): Promise<Website>;
-    getMyWebsites(): Promise<Website[]>;
-
-    // Domain verification
-    getVerificationToken(websiteId: bigint): Promise<string>;
-    verifyDomain(websiteId: bigint): Promise<boolean>;
-
-    // Admin: manage websites
-    approveWebsite(websiteId: bigint): Promise<Website>;
-    rejectWebsite(websiteId: bigint): Promise<Website>;
-    editWebsite(websiteId: bigint, title: string, description: string, keywords: string[]): Promise<Website>;
-    deleteWebsite(websiteId: bigint): Promise<void>;
-    getAllWebsites(): Promise<Website[]>;
-    getPendingWebsites(): Promise<Website[]>;
-
-    // Admin: seed data
-    importSeedData(entries: SeedEntry[]): Promise<bigint>;
-
-    // Security: logs
-    getSecurityLogs(): Promise<SecurityLog[]>;
-
-    // Security: blacklist
-    addToBlacklist(domain: string, reason: string): Promise<void>;
-    removeFromBlacklist(domain: string): Promise<void>;
-    getBlacklist(): Promise<BlacklistEntry[]>;
-    getFlaggedDomains(): Promise<BlacklistEntry[]>;
-    reviewFlaggedDomain(domain: string, action: ReviewAction): Promise<void>;
-
-    // Click tracking
-    recordClick(url: string): Promise<void>;
-
-    // Advertiser / Monetization
-    applyForAdvertiser(email: string): Promise<void>;
-    getMyAdvertiserProfile(email: string): Promise<[] | [AdvertiserProfile]>;
-    getAllAdvertiserApplications(): Promise<AdvertiserProfile[]>;
-    approveAdvertiser(email: string): Promise<void>;
-    rejectAdvertiser(email: string): Promise<void>;
     addAdvertiserBalance(email: string, amount: bigint): Promise<void>;
+    addToBlacklist(domain: string, reason: string): Promise<void>;
+    applyForAdvertiser(email: string): Promise<void>;
+    approveAdvertiser(email: string): Promise<void>;
+    approveWebsite(websiteId: bigint): Promise<Website>;
+    assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    createCampaign(email: string, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
+    deleteWebsite(websiteId: bigint): Promise<void>;
+    editWebsite(websiteId: bigint, title: string, description: string, keywords: Array<string>): Promise<Website>;
+    getAdsEnabled(): Promise<boolean>;
+    getAdsForSearch(searchQuery: string): Promise<Array<AdResult>>;
+    getAllAdvertiserApplications(): Promise<Array<AdvertiserProfile>>;
+    getAllCampaigns(): Promise<Array<Campaign>>;
+    getAllWebsites(): Promise<Array<Website>>;
+    getBlacklist(): Promise<Array<BlacklistEntry>>;
+    getCallerUserProfile(): Promise<UserProfile | null>;
+    getCallerUserRole(): Promise<UserRole>;
+    getFlaggedDomains(): Promise<Array<BlacklistEntry>>;
+    getMyAdvertiserProfile(email: string): Promise<AdvertiserProfile | null>;
+    getMyCampaigns(email: string): Promise<Array<Campaign>>;
+    getMyWebsites(): Promise<Array<Website>>;
+    getPendingWebsites(): Promise<Array<Website>>;
+    getSecurityLogs(): Promise<Array<SecurityLog>>;
+    getStats(): Promise<Stats>;
+    getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getVerificationToken(websiteId: bigint): Promise<string>;
+    importSeedData(entries: Array<SeedEntry>): Promise<bigint>;
+    isCallerAdmin(): Promise<boolean>;
+    pauseCampaign(campaignId: bigint): Promise<void>;
+    recordAdClick(campaignId: bigint, userSession: string): Promise<Result>;
+    recordAdImpression(campaignId: bigint): Promise<void>;
+    recordClick(url: string): Promise<void>;
+    rejectAdvertiser(email: string): Promise<void>;
+    rejectWebsite(websiteId: bigint): Promise<Website>;
+    removeFromBlacklist(domain: string): Promise<void>;
+    resumeCampaign(campaignId: bigint): Promise<void>;
+    reviewFlaggedDomain(domain: string, action: Variant_remove_approve_block): Promise<void>;
+    saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    searchWebsites(searchQuery: string): Promise<Array<Website>>;
+    setAdsEnabled(enabled: boolean): Promise<void>;
+    submitWebsite(url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
+    transform(input: TransformationInput): Promise<TransformationOutput>;
+    updateCampaign(campaignId: bigint, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
+    verifyDomain(websiteId: bigint): Promise<boolean>;
 }

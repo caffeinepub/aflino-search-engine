@@ -44,9 +44,9 @@ export default function RegisterPage() {
     const checkAndRedirect = async () => {
       try {
         const role = await actor.getCallerUserRole();
-        if ("admin" in role) {
+        if (role === "admin") {
           void navigate({ to: "/admin" });
-        } else if ("user" in role) {
+        } else if (role === "user") {
           void navigate({ to: "/dashboard" });
         } else {
           // guest — stay on page to choose role
@@ -65,8 +65,8 @@ export default function RegisterPage() {
     if (!actor || !selectedRole) return;
     setIsRegistering(true);
     try {
-      const role = { user: null as null };
-      await actor.assignCallerUserRole(identity!.getPrincipal(), role);
+      const { UserRole } = await import("../backend.d");
+      await actor.assignCallerUserRole(identity!.getPrincipal(), UserRole.user);
       toast.success("Account created successfully!");
       if (selectedRole === "owner") {
         void navigate({ to: "/dashboard" });
