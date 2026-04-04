@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+
+    /* Aflino Blue palette */
+    /* Primary #006AFF → oklch(0.55 0.22 262) */
+    /* Hover   #0052CC → oklch(0.45 0.22 262) */
+
+    --background: 1 0 0;
+    --foreground: 0.13 0.02 264;
+    --card: 1 0 0;
+    --card-foreground: 0.13 0.02 264;
+    --popover: 1 0 0;
+    --popover-foreground: 0.13 0.02 264;
+
+    /* Primary = #006AFF */
+    --primary: 0.55 0.22 262;
+    --primary-foreground: 1 0 0;
+
+    /* Secondary = light gray #F1F3F5 */
+    --secondary: 0.95 0.003 264;
+    --secondary-foreground: 0.25 0.02 264;
+
+    --muted: 0.96 0.002 264;
+    --muted-foreground: 0.48 0.01 264;
+
+    /* Accent = light blue tint */
+    --accent: 0.94 0.05 262;
+    --accent-foreground: 0.45 0.18 262;
+
+    --destructive: 0.57 0.22 25;
+    --destructive-foreground: 0.99 0 0;
+
+    /* Border = #E5E7EB */
+    --border: 0.91 0.005 264;
+    --input: 0.91 0.005 264;
+
+    /* Ring = #006AFF */
+    --ring: 0.55 0.22 262;
+
+    /* Status colors */
+    --success: 0.52 0.13 145;
+    --success-foreground: 0.99 0 0;
+    --warning: 0.72 0.12 65;
+    --warning-bg: 0.93 0.06 80;
+    --pending: 0.62 0.11 55;
+    --pending-bg: 0.95 0.05 80;
+
+    /* Link = #006AFF */
+    --link: 0.55 0.22 262;
+
+    /* Charts */
+    --chart-1: 0.55 0.22 262;
+    --chart-2: 0.45 0.18 257;
+    --chart-3: 0.52 0.13 145;
+    --chart-4: 0.72 0.12 65;
+    --chart-5: 0.57 0.22 25;
+
+    /* Sidebar (admin dark — intentional, keep as-is) */
+    --sidebar: 0.25 0.04 225;
+    --sidebar-foreground: 0.87 0.02 220;
+    --sidebar-primary: 0.55 0.22 262;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.32 0.05 220;
+    --sidebar-accent-foreground: 0.87 0.02 220;
+    --sidebar-border: 0.35 0.04 220;
+    --sidebar-ring: 0.55 0.22 262;
+  }
+
+  .dark {
+    --background: 0.14 0.02 264;
+    --foreground: 0.95 0.01 264;
+    --card: 0.2 0.03 264;
+    --card-foreground: 0.95 0.01 264;
+    --popover: 0.22 0.03 264;
+    --popover-foreground: 0.95 0.01 264;
+    --primary: 0.65 0.2 262;
+    --primary-foreground: 1 0 0;
+    --secondary: 0.28 0.03 264;
+    --secondary-foreground: 0.9 0.01 264;
+    --muted: 0.28 0.03 264;
+    --muted-foreground: 0.6 0.01 264;
+    --accent: 0.3 0.08 262;
+    --accent-foreground: 0.8 0.1 262;
+    --destructive: 0.65 0.2 25;
+    --destructive-foreground: 0.99 0 0;
+    --border: 1 0 0 / 10%;
+    --input: 1 0 0 / 15%;
+    --ring: 0.65 0.2 262;
+    --sidebar: 0.18 0.03 264;
+    --sidebar-foreground: 0.87 0.02 264;
+    --sidebar-primary: 0.6 0.2 262;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.25 0.04 264;
+    --sidebar-accent-foreground: 0.87 0.02 264;
+    --sidebar-border: 0.3 0.04 264;
+    --sidebar-ring: 0.6 0.2 262;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  }
+}
