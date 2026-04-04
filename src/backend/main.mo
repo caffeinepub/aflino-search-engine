@@ -737,4 +737,99 @@ actor {
       "Domain reviewed: " # domain # " action: " # actionText);
   };
 
+  // ─── Advertiser / Monetization System ─────────────────────────────────────
+
+  public type AdvertiserStatus = { #pending; #approved; #rejected };
+
+  public type AdvertiserProfile = {
+    email : Text;
+    status : AdvertiserStatus;
+    balance : Nat;
+    appliedAt : Int;
+    reviewedAt : ?Int;
+  };
+
+  var advertiserProfiles : [AdvertiserProfile] = [];
+
+  // Apply to become an advertiser (called with user email)
+  public func applyForAdvertiser(email : Text) : async () {
+    if (email.size() == 0 or email.size() > 200) {
+      Runtime.trap("Invalid email");
+    };
+    // If already applied, do nothing (idempotent)
+    for (p in advertiserProfiles.vals()) {
+      if (p.email == email) {
+        Runtime.trap("Already applied");
+      };
+    };
+    let profile : AdvertiserProfile = {
+      email;
+      status = #pending;
+      balance = 0;
+      appliedAt = Time.now();
+      reviewedAt = null;
+    };
+    advertiserProfiles := advertiserProfiles.concat([profile]);
+  };
+
+  // Get profile for a given email (user calls this with their own email)
+  public query func getMyAdvertiserProfile(email : Text) : async ?AdvertiserProfile {
+    advertiserProfiles.find(func(p : AdvertiserProfile) : Bool { p.email == email })
+  };
+
+  // Admin: get all advertiser applications
+  public query ({ caller }) func getAllAdvertiserApplications() : async [AdvertiserProfile] {
+    requireAdmin(caller);
+    advertiserProfiles
+  };
+
+  // Admin: approve an advertiser application
+  public shared ({ caller }) func approveAdvertiser(email : Text) : async () {
+    requireAdmin(caller);
+    var found = false;
+    advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
+      if (p.email == email) {
+        found := true;
+        { p with status = #approved; reviewedAt = ?Time.now() }
+      } else p
+    });
+    if (not found) {
+      Runtime.trap("Advertiser not found");
+    };
+  };
+
+  // Admin: reject an advertiser application
+  public shared ({ caller }) func rejectAdvertiser(email : Text) : async () {
+    requireAdmin(caller);
+    var found = false;
+    advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
+      if (p.email == email) {
+        found := true;
+        { p with status = #rejected; reviewedAt = ?Time.now() }
+      } else p
+    });
+    if (not found) {
+      Runtime.trap("Advertiser not found");
+    };
+  };
+
+  // Admin: manually add balance to an advertiser (minimum ₹500)
+  public shared ({ caller }) func addAdvertiserBalance(email : Text, amount : Nat) : async () {
+    requireAdmin(caller);
+    if (amount < 500) {
+      Runtime.trap("Minimum top-up is Rs. 500");
+    };
+    var found = false;
+    advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
+      if (p.email == email) {
+        found := true;
+        { p with balance = p.balance + amount }
+      } else p
+    });
+    if (not found) {
+      Runtime.trap("Advertiser not found");
+    };
+  };
+
 };
+

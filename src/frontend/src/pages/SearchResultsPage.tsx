@@ -1,7 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CheckCircle2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  User,
+} from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { Website } from "../backend.d";
+import { useAuth } from "../context/AuthContext";
 import { useRecordClick, useSearchWebsites } from "../hooks/useQueries";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -9,7 +16,7 @@ import { useRecordClick, useSearchWebsites } from "../hooks/useQueries";
 const RESULTS_PER_PAGE = 10;
 const SKELETON_KEYS = ["sk-1", "sk-2", "sk-3", "sk-4", "sk-5"];
 
-// ── Keyword highlight utility ─────────────────────────────────────────────────
+// ── Keyword highlight utility ─────────────────────────────────────────────────────
 
 interface TextSegment {
   text: string;
@@ -66,7 +73,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
-// ── Skeleton loader ───────────────────────────────────────────────────────────
+// ── Skeleton loader ───────────────────────────────────────────────────────────────
 
 function ResultSkeleton() {
   return (
@@ -79,7 +86,7 @@ function ResultSkeleton() {
   );
 }
 
-// ── Single result item ────────────────────────────────────────────────────────
+// ── Single result item ────────────────────────────────────────────────────────────
 
 function ResultItem({
   website,
@@ -141,16 +148,42 @@ export default function SearchResultsPage() {
   const [inputValue, setInputValue] = useState(q);
   const [focused, setFocused] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: results = [], isLoading } = useSearchWebsites(q);
   const { mutate: recordClick } = useRecordClick();
+  const {
+    isAuthenticated: isLocalAuth,
+    role: authRole,
+    user: authUser,
+    logout: authLogout,
+  } = useAuth();
+
+  const isUserLoggedIn = isLocalAuth && authRole === "user";
+  const userInitial = authUser ? authUser.charAt(0).toUpperCase() : "U";
 
   // Admin-configurable logo URL
   const headerLogoUrl =
     typeof localStorage !== "undefined"
       ? localStorage.getItem("aflino_header_logo_url") || ""
       : "";
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(e.target as Node)
+      ) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileMenuOpen]);
 
   // Sync input + reset page + scroll to top whenever the URL query changes
   useEffect(
@@ -174,6 +207,12 @@ export default function SearchResultsPage() {
 
   const handleClickTrack = (url: string) => {
     recordClick(url);
+  };
+
+  const handleUserLogout = () => {
+    authLogout();
+    setProfileMenuOpen(false);
+    void navigate({ to: "/" });
   };
 
   // Pagination
@@ -258,6 +297,78 @@ export default function SearchResultsPage() {
               <Search className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Profile icon — only when user is logged in */}
+          {isUserLoggedIn && (
+            <div className="relative flex-shrink-0" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((o) => !o)}
+                className="h-8 w-8 rounded-full bg-[#006AFF] flex items-center justify-center text-white hover:bg-[#0052CC] transition-colors"
+                aria-label={`Profile menu for ${authUser}`}
+                aria-expanded={profileMenuOpen}
+                aria-haspopup="menu"
+                data-ocid="search.profile.button"
+              >
+                {authUser ? (
+                  <span className="text-xs font-bold">{userInitial}</span>
+                ) : (
+                  <User className="h-4 w-4" />
+                )}
+              </button>
+
+              {/* Dropdown */}
+              {profileMenuOpen && (
+                <div
+                  className="absolute right-0 top-10 bg-white rounded-xl border border-[#E5E7EB] shadow-lg w-48 z-50 py-1"
+                  role="menu"
+                  data-ocid="search.profile.dropdown_menu"
+                >
+                  {authUser && (
+                    <div className="px-4 py-2 border-b border-[#F3F4F6]">
+                      <p className="text-xs text-[#9CA3AF] truncate">
+                        {authUser}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void navigate({ to: "/dashboard" });
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-[#374151] hover:bg-[#F9FAFB] transition-colors"
+                    data-ocid="search.profile.dashboard.link"
+                  >
+                    Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void navigate({ to: "/submit" });
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-[#374151] hover:bg-[#F9FAFB] transition-colors"
+                    data-ocid="search.profile.submit.link"
+                  >
+                    Submit Website
+                  </button>
+                  <div className="border-t border-[#F3F4F6] my-1" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleUserLogout}
+                    className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                    data-ocid="search.profile.logout.button"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 

@@ -14,22 +14,25 @@ export function useActor() {
     queryFn: async () => {
       const isAuthenticated = !!identity;
 
-      const actorOptions = isAuthenticated
-        ? { agentOptions: { identity } }
-        : {};
+      if (!isAuthenticated) {
+        // Return anonymous actor if not authenticated
+        return await createActorWithConfig();
+      }
+
+      const actorOptions = {
+        agentOptions: {
+          identity,
+        },
+      };
 
       const actor = await createActorWithConfig(actorOptions);
-
-      // Always initialize with the admin token so that local-auth admins
-      // (username/password login) can call protected backend endpoints
-      // without requiring Internet Identity.
       const adminToken = getSecretParameter("caffeineAdminToken") || "";
       await actor._initializeAccessControlWithSecret(adminToken);
-
       return actor;
     },
     // Only refetch when identity changes
     staleTime: Number.POSITIVE_INFINITY,
+    // This will cause the actor to be recreated when the identity changes
     enabled: true,
   });
 

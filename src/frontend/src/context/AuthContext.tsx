@@ -10,7 +10,7 @@ import {
 
 const STORAGE_KEY = "aflino_auth";
 
-export type AuthRole = "admin" | "user" | "guest";
+export type AuthRole = "admin" | "advertiser" | "user" | "guest";
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -20,6 +20,8 @@ export interface AuthState {
 
 interface AuthContextValue extends AuthState {
   loginAsAdmin: () => void;
+  loginAsUser: (email: string) => void;
+  loginAsAdvertiser: (email: string) => void;
   logout: () => void;
 }
 
@@ -33,12 +35,32 @@ function readStorage(): AuthState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState;
-    const parsed = JSON.parse(raw) as Partial<AuthState>;
+    const parsed = JSON.parse(raw) as Partial<AuthState> & { email?: string };
     if (parsed.isAuthenticated && parsed.role === "admin") {
       return {
         isAuthenticated: true,
         role: "admin",
         user: parsed.user ?? "aflino_admin",
+      };
+    }
+    if (parsed.isAuthenticated && parsed.role === "advertiser" && parsed.user) {
+      return {
+        isAuthenticated: true,
+        role: "advertiser",
+        user: parsed.user,
+      };
+    }
+    if (
+      parsed.isAuthenticated &&
+      parsed.role === "user" &&
+      parsed.user &&
+      typeof parsed.user === "string" &&
+      parsed.user.length > 0
+    ) {
+      return {
+        isAuthenticated: true,
+        role: "user",
+        user: parsed.user,
       };
     }
   } catch {
@@ -50,7 +72,7 @@ function readStorage(): AuthState {
 function writeStorage(state: AuthState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    // Also keep the legacy key in sync so existing checks still work
+    // Keep legacy key in sync so existing admin checks still work
     if (state.isAuthenticated && state.role === "admin") {
       localStorage.setItem("aflino_admin_logged_in", "true");
     } else {
@@ -96,14 +118,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth(next);
   }, []);
 
+  const loginAsUser = useCallback((email: string) => {
+    const next: AuthState = {
+      isAuthenticated: true,
+      role: "user",
+      user: email,
+    };
+    writeStorage(next);
+    setAuth(next);
+  }, []);
+
+  const loginAsAdvertiser = useCallback((email: string) => {
+    const next: AuthState = {
+      isAuthenticated: true,
+      role: "advertiser",
+      user: email,
+    };
+    writeStorage(next);
+    setAuth(next);
+  }, []);
+
   const logout = useCallback(() => {
     clearStorage();
     setAuth(defaultState);
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...auth, loginAsAdmin, logout }),
-    [auth, loginAsAdmin, logout],
+    () => ({ ...auth, loginAsAdmin, loginAsUser, loginAsAdvertiser, logout }),
+    [auth, loginAsAdmin, loginAsUser, loginAsAdvertiser, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

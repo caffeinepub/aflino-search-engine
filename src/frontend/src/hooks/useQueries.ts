@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AdvertiserProfile,
   BlacklistEntry,
   ReviewAction,
   SecurityLog,
@@ -329,6 +330,94 @@ export function useRecordClick() {
     mutationFn: async (url: string) => {
       if (!actor) return;
       await actor.recordClick(url);
+    },
+  });
+}
+
+// ── Advertiser / Monetization hooks ───────────────────────────
+
+export function useApplyForAdvertiser() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (email: string) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.applyForAdvertiser(email);
+    },
+  });
+}
+
+export function useGetMyAdvertiserProfile(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdvertiserProfile | null>({
+    queryKey: ["advertiserProfile", email],
+    queryFn: async () => {
+      if (!actor || !email) return null;
+      const result = await actor.getMyAdvertiserProfile(email);
+      // Motoko optional returns as [] or [value]
+      if (Array.isArray(result)) return result[0] ?? null;
+      return result ?? null;
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useGetAllAdvertiserApplications() {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdvertiserProfile[]>({
+    queryKey: ["advertiserApplications"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllAdvertiserApplications();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useApproveAdvertiser() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (email: string) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.approveAdvertiser(email);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["advertiserApplications"],
+      });
+    },
+  });
+}
+
+export function useRejectAdvertiser() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (email: string) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.rejectAdvertiser(email);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["advertiserApplications"],
+      });
+    },
+  });
+}
+
+export function useAddAdvertiserBalance() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { email: string; amount: number }) => {
+      if (!actor) throw new Error("Not connected");
+      if (data.amount < 500) throw new Error("Minimum top-up is ₹500");
+      return actor.addAdvertiserBalance(data.email, BigInt(data.amount));
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["advertiserApplications"],
+      });
     },
   });
 }

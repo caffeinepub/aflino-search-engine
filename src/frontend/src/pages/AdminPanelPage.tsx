@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronUp,
   Compass,
+  DollarSign,
   Edit2,
   Globe,
   LayoutDashboard,
@@ -54,23 +55,31 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ReviewAction, SeedEntry, Website } from "../backend.d";
+import type {
+  AdvertiserStatusVariant,
+  ReviewAction,
+  SeedEntry,
+  Website,
+} from "../backend.d";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { useIsMobile } from "../hooks/use-mobile";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  useAddAdvertiserBalance,
   useAddToBlacklist,
+  useApproveAdvertiser,
   useApproveWebsite,
   useAssignRole,
   useDeleteWebsite,
   useEditWebsite,
+  useGetAllAdvertiserApplications,
   useGetAllWebsites,
   useGetBlacklist,
   useGetFlaggedDomains,
   useGetSecurityLogs,
   useGetStats,
   useImportSeedData,
+  useRejectAdvertiser,
   useRejectWebsite,
   useRemoveFromBlacklist,
   useReviewFlaggedDomain,
@@ -92,7 +101,8 @@ type AdminSection =
   | "analytics"
   | "search-control"
   | "branding"
-  | "notifications";
+  | "notifications"
+  | "monetization";
 
 type SecuritySubTab = "logs" | "blacklist" | "flagged";
 type DiscoverSubTab = "categories" | "featured" | "trending";
@@ -2877,6 +2887,236 @@ function NotificationsSection() {
   );
 }
 
+// ── Monetization Section ────────────────────────────────────────────
+
+function MonetizationSection() {
+  const { data: applications = [], isLoading } =
+    useGetAllAdvertiserApplications();
+  const approveMutation = useApproveAdvertiser();
+  const rejectMutation = useRejectAdvertiser();
+  const addBalanceMutation = useAddAdvertiserBalance();
+
+  const [balanceEmail, setBalanceEmail] = useState("");
+  const [balanceAmount, setBalanceAmount] = useState("");
+
+  const handleApprove = async (email: string) => {
+    try {
+      await approveMutation.mutateAsync(email);
+      toast.success(`${email} approved as advertiser`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Approve failed");
+    }
+  };
+
+  const handleReject = async (email: string) => {
+    try {
+      await rejectMutation.mutateAsync(email);
+      toast.success(`${email} rejected`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reject failed");
+    }
+  };
+
+  const handleAddBalance = async () => {
+    const amount = Number.parseInt(balanceAmount, 10);
+    if (!balanceEmail.trim()) {
+      toast.error("Email required");
+      return;
+    }
+    if (Number.isNaN(amount) || amount < 500) {
+      toast.error("Minimum ₹500");
+      return;
+    }
+    try {
+      await addBalanceMutation.mutateAsync({
+        email: balanceEmail.trim(),
+        amount,
+      });
+      toast.success(`₹${amount} added to ${balanceEmail}`);
+      setBalanceEmail("");
+      setBalanceAmount("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    }
+  };
+
+  const getStatusInfo = (status: AdvertiserStatusVariant) => {
+    if ("pending" in status)
+      return {
+        label: "Pending",
+        cls: "bg-amber-100 text-amber-800 border-amber-200",
+      };
+    if ("approved" in status)
+      return {
+        label: "Approved",
+        cls: "bg-green-100 text-green-800 border-green-200",
+      };
+    return { label: "Rejected", cls: "bg-red-100 text-red-800 border-red-200" };
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-8"
+    >
+      <div>
+        <h1 className="font-display text-2xl font-bold">
+          Monetization Control
+        </h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Manage advertiser applications and balances
+        </p>
+      </div>
+
+      {/* Advertiser Applications Table */}
+      <div className="space-y-3">
+        <h2 className="font-semibold text-base">Advertiser Applications</h2>
+        {isLoading ? (
+          <div
+            className="flex items-center gap-2 py-8 text-muted-foreground"
+            data-ocid="monetization.loading_state"
+          >
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-sm">Loading applications…</span>
+          </div>
+        ) : applications.length === 0 ? (
+          <div
+            className="rounded-xl border border-border p-10 text-center"
+            data-ocid="monetization.applications.empty_state"
+          >
+            <p className="text-sm text-muted-foreground">
+              No advertiser applications yet
+            </p>
+          </div>
+        ) : (
+          <div
+            className="rounded-xl border border-border overflow-hidden"
+            data-ocid="monetization.applications.table"
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead>Email</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Balance</TableHead>
+                  <TableHead>Applied</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {applications.map((app, i) => {
+                  const { label, cls } = getStatusInfo(app.status);
+                  return (
+                    <TableRow
+                      key={app.email}
+                      data-ocid={`monetization.application.item.${i + 1}`}
+                    >
+                      <TableCell className="text-sm font-medium">
+                        {app.email}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}
+                        >
+                          {label}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        ₹{app.balance.toString()}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(
+                          Number(app.appliedAt) / 1_000_000,
+                        ).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {"pending" in app.status && (
+                            <>
+                              <button
+                                type="button"
+                                title="Approve"
+                                onClick={() => void handleApprove(app.email)}
+                                disabled={approveMutation.isPending}
+                                className="h-7 w-7 flex items-center justify-center rounded-md text-green-600 hover:bg-green-100 transition-colors"
+                                data-ocid={`monetization.approve.button.${i + 1}`}
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Reject"
+                                onClick={() => void handleReject(app.email)}
+                                disabled={rejectMutation.isPending}
+                                className="h-7 w-7 flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                                data-ocid={`monetization.reject.button.${i + 1}`}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Balance */}
+      <Separator />
+      <div className="space-y-3">
+        <h2 className="font-semibold text-base">Add Balance</h2>
+        <p className="text-xs text-muted-foreground">Minimum top-up: ₹500</p>
+        <div
+          className="rounded-xl border border-border p-5 max-w-md space-y-3"
+          data-ocid="monetization.balance.panel"
+        >
+          <div className="space-y-1.5">
+            <Label>Advertiser Email</Label>
+            <Input
+              placeholder="advertiser@example.com"
+              value={balanceEmail}
+              onChange={(e) => setBalanceEmail(e.target.value)}
+              data-ocid="monetization.balance.email.input"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Amount (₹)</Label>
+            <Input
+              type="number"
+              placeholder="500"
+              min={500}
+              value={balanceAmount}
+              onChange={(e) => setBalanceAmount(e.target.value)}
+              data-ocid="monetization.balance.amount.input"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => void handleAddBalance()}
+            disabled={addBalanceMutation.isPending}
+            data-ocid="monetization.balance.submit_button"
+          >
+            {addBalanceMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Adding…
+              </>
+            ) : (
+              "Add Balance"
+            )}
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Sidebar Nav Item ──────────────────────────────────────────────────────────
 
 interface NavItem {
@@ -2892,12 +3132,14 @@ function SidebarContent({
   pendingCount,
   onSignOut,
   adminLogoUrl,
+  onClose,
 }: {
   activeSection: AdminSection;
   onNavigate: (s: AdminSection) => void;
   pendingCount: number;
   onSignOut: () => void;
   adminLogoUrl: string;
+  onClose: () => void;
 }) {
   const navItems: NavItem[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -2914,71 +3156,86 @@ function SidebarContent({
     { id: "search-control", label: "Search Control", icon: Search },
     { id: "branding", label: "Branding", icon: Palette },
     { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "monetization", label: "Monetization Control", icon: DollarSign },
   ];
 
   return (
-    <div className="flex flex-col h-full bg-sidebar">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-sidebar-border flex-shrink-0">
-        {adminLogoUrl ? (
-          <img
-            src={adminLogoUrl}
-            alt="Aflino Admin"
-            className="h-8 object-contain"
-          />
-        ) : (
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-              <span className="text-primary-foreground text-xs font-bold">
-                A
-              </span>
-            </div>
-            <div>
-              <p className="text-sidebar-foreground font-display font-bold text-sm leading-tight">
-                Aflino
-              </p>
-              <p className="text-sidebar-foreground/50 text-xs">Admin Panel</p>
-            </div>
-          </div>
-        )}
+    <div className="flex flex-col h-full bg-white border-r border-gray-200">
+      {/* Header: Aflino Admin branding + close button */}
+      <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          {adminLogoUrl ? (
+            <img
+              src={adminLogoUrl}
+              alt="Aflino Admin"
+              className="h-8 object-contain"
+            />
+          ) : (
+            <>
+              <div className="h-8 w-8 rounded-lg bg-[#006AFF] flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-sm font-bold">A</span>
+              </div>
+              <div>
+                <p className="text-[#111827] font-bold text-sm leading-tight">
+                  Aflino Admin
+                </p>
+                <p className="text-gray-400 text-xs">Control Panel</p>
+              </div>
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+          aria-label="Close sidebar"
+          data-ocid="admin.sidebar.close_button"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Nav */}
       <ScrollArea className="flex-1">
-        <nav className="px-3 py-3 space-y-0.5">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeSection === item.id
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              }`}
-              data-ocid={`sidebar.${item.id}.link`}
-            >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1 text-left">{item.label}</span>
-              {item.badge !== undefined && (
-                <span className="flex-shrink-0 bg-amber-500 text-white text-xs font-bold rounded-full h-5 min-w-5 flex items-center justify-center px-1">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          ))}
+        <nav className="px-3 py-4 space-y-1">
+          {navItems.map((item) => {
+            const isActive = activeSection === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-[9px] text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-[#006AFF] text-white"
+                    : "text-[#111827] hover:bg-[#F1F5F9]"
+                }`}
+                data-ocid={`sidebar.${item.id}.link`}
+              >
+                <item.icon
+                  className={`h-4 w-4 flex-shrink-0 ${isActive ? "text-white" : "text-gray-400"}`}
+                />
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.badge !== undefined && (
+                  <span className="flex-shrink-0 bg-amber-500 text-white text-xs font-bold rounded-full h-5 min-w-5 flex items-center justify-center px-1">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
       </ScrollArea>
 
       {/* Sign Out */}
-      <div className="px-3 py-3 border-t border-sidebar-border flex-shrink-0">
+      <div className="px-3 py-3 border-t border-gray-200 flex-shrink-0">
         <button
           type="button"
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-[9px] text-sm font-medium text-[#111827] hover:text-red-600 hover:bg-red-50 transition-colors"
           data-ocid="admin.signout.button"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-4 w-4 text-gray-400" />
           Sign Out
         </button>
       </div>
@@ -2992,7 +3249,6 @@ export default function AdminPanelPage() {
   const navigate = useNavigate();
   const { clear } = useInternetIdentity();
   const { data: stats } = useGetStats();
-  const isMobile = useIsMobile(1024);
   const { role: authRole, logout: authLogout } = useAuth();
 
   // Access is granted purely from local admin login (no II required)
@@ -3050,45 +3306,32 @@ export default function AdminPanelPage() {
     "search-control": "Search Control",
     branding: "Branding",
     notifications: "Notifications",
+    monetization: "Monetization Control",
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Desktop Sidebar */}
-      {!isMobile && (
-        <aside
-          className="w-60 flex-shrink-0 h-full overflow-hidden"
-          data-ocid="admin.sidebar.panel"
-        >
-          <SidebarContent
-            activeSection={activeSection}
-            onNavigate={handleNavigate}
-            pendingCount={pendingCount}
-            onSignOut={handleSignOut}
-            adminLogoUrl={adminLogoUrl}
-          />
-        </aside>
-      )}
-
-      {/* Mobile Sidebar Overlay */}
+    <div className="h-screen overflow-hidden bg-background flex flex-col">
+      {/* Drawer Overlay — shown on all screen sizes */}
       <AnimatePresence>
-        {isMobile && sidebarOpen && (
+        {sidebarOpen && (
           <>
             <motion.div
               ref={overlayRef}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/50 z-40"
+              className="fixed inset-0 bg-black/40 z-40"
+              data-ocid="admin.sidebar.overlay"
             />
             <motion.aside
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="fixed left-0 top-0 h-full w-72 z-50 shadow-elevated"
-              data-ocid="admin.mobile.sidebar.panel"
+              className="fixed left-0 top-0 h-full z-50 shadow-xl w-[50vw] md:w-[300px]"
+              data-ocid="admin.sidebar.panel"
             >
               <SidebarContent
                 activeSection={activeSection}
@@ -3096,36 +3339,35 @@ export default function AdminPanelPage() {
                 pendingCount={pendingCount}
                 onSignOut={handleSignOut}
                 adminLogoUrl={adminLogoUrl}
+                onClose={() => setSidebarOpen(false)}
               />
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
-      {/* Main Area */}
+      {/* Main Area — always full width */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile Top Bar */}
-        {isMobile && (
-          <header
-            className="flex-shrink-0 h-14 border-b border-border bg-background flex items-center px-4 gap-3"
-            data-ocid="admin.mobile.topbar"
+        {/* Top Bar — always visible on all screen sizes */}
+        <header
+          className="flex-shrink-0 h-14 border-b border-gray-200 bg-white flex items-center px-4 gap-3"
+          data-ocid="admin.topbar"
+        >
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 text-[#111827] hover:bg-[#F1F5F9] transition-colors"
+            data-ocid="admin.menu.button"
           >
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border text-foreground hover:bg-muted transition-colors"
-              data-ocid="admin.mobile.menu.button"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <div>
-              <p className="font-display text-sm font-bold">Admin Panel</p>
-              <p className="text-xs text-muted-foreground">
-                {sectionLabels[activeSection]}
-              </p>
-            </div>
-          </header>
-        )}
+            <Menu className="h-5 w-5" />
+          </button>
+          <div>
+            <p className="text-sm font-bold text-[#111827]">Admin Panel</p>
+            <p className="text-xs text-gray-500">
+              {sectionLabels[activeSection]}
+            </p>
+          </div>
+        </header>
 
         {/* Content */}
         <main className="flex-1 overflow-auto">
@@ -3147,6 +3389,7 @@ export default function AdminPanelPage() {
                 {activeSection === "search-control" && <SearchControlSection />}
                 {activeSection === "branding" && <BrandingSection />}
                 {activeSection === "notifications" && <NotificationsSection />}
+                {activeSection === "monetization" && <MonetizationSection />}
               </motion.div>
             </AnimatePresence>
           </div>

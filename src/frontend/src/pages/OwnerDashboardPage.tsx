@@ -26,15 +26,19 @@ import {
   LogOut,
   Plus,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Website } from "../backend.d";
 import StatusBadge from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  useApplyForAdvertiser,
   useGetCallerRole,
+  useGetMyAdvertiserProfile,
   useGetMyWebsites,
   useGetVerificationToken,
   useSubmitWebsite,
@@ -48,7 +52,7 @@ import {
   validateUrl,
 } from "../utils/security";
 
-type SidebarTab = "my-websites" | "submit" | "account";
+type SidebarTab = "my-websites" | "submit" | "account" | "monetization";
 
 function VerificationDialog({
   website,
@@ -170,9 +174,10 @@ function VerificationDialog({
 
 export default function OwnerDashboardPage() {
   const navigate = useNavigate();
-  const { identity, clear } = useInternetIdentity();
+  const auth = useAuth();
+  const userEmail = auth.user;
+  const { identity } = useInternetIdentity();
   const { data: role } = useGetCallerRole();
-  const isAuthenticated = !!identity;
 
   const [activeTab, setActiveTab] = useState<SidebarTab>("my-websites");
   const [verifyingWebsite, setVerifyingWebsite] = useState<Website | null>(
@@ -194,8 +199,16 @@ export default function OwnerDashboardPage() {
   const { data: websites = [], isLoading } = useGetMyWebsites();
   const submitMutation = useSubmitWebsite();
 
-  if (!isAuthenticated) {
-    void navigate({ to: "/register" });
+  // Monetization
+  const {
+    data: advertiserProfile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = useGetMyAdvertiserProfile(userEmail);
+  const applyMutation = useApplyForAdvertiser();
+
+  if (!auth.isAuthenticated) {
+    void navigate({ to: "/login" });
     return null;
   }
 
@@ -239,6 +252,20 @@ export default function OwnerDashboardPage() {
     }
   };
 
+  const handleApplyForAdvertiser = async () => {
+    if (!userEmail) {
+      toast.error("No email found. Please log in again.");
+      return;
+    }
+    try {
+      await applyMutation.mutateAsync(userEmail);
+      toast.success("Application submitted! Admin will review soon.");
+      void refetchProfile();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Application failed");
+    }
+  };
+
   const sidebarLinks: {
     id: SidebarTab;
     label: string;
@@ -255,11 +282,23 @@ export default function OwnerDashboardPage() {
       icon: <Plus className="h-4 w-4" />,
     },
     {
+      id: "monetization",
+      label: "Monetization",
+      icon: <TrendingUp className="h-4 w-4" />,
+    },
+    {
       id: "account",
       label: "Account",
       icon: <ShieldCheck className="h-4 w-4" />,
     },
   ];
+
+  // Derive advertiser status
+  const isApproved =
+    advertiserProfile && "approved" in advertiserProfile.status;
+  const isPending = advertiserProfile && "pending" in advertiserProfile.status;
+  const isRejected =
+    advertiserProfile && "rejected" in advertiserProfile.status;
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -301,7 +340,10 @@ export default function OwnerDashboardPage() {
         <div className="p-3 border-t border-sidebar-border">
           <button
             type="button"
-            onClick={clear}
+            onClick={() => {
+              auth.logout();
+              void navigate({ to: "/login" });
+            }}
             className="flex items-center gap-2 text-sidebar-foreground/60 hover:text-sidebar-foreground text-sm transition-colors w-full px-3 py-2"
             data-ocid="dashboard.logout.button"
           >
@@ -567,6 +609,138 @@ export default function OwnerDashboardPage() {
             </motion.div>
           )}
 
+          {/* Monetization Tab */}
+          {activeTab === "monetization" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <div className="mb-6">
+                <h1 className="font-display text-2xl font-bold">
+                  Monetization
+                </h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Become an advertiser and promote your products on Aflino
+                </p>
+              </div>
+
+              <div className="max-w-lg space-y-4">
+                <div
+                  className="rounded-xl border border-border p-6 space-y-5"
+                  data-ocid="monetization.panel"
+                >
+                  {profileLoading ? (
+                    <div
+                      className="flex items-center gap-2 py-2"
+                      data-ocid="monetization.loading_state"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm text-muted-foreground">
+                        Loading status…
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Status row */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                            Advertiser Status
+                          </p>
+                          {!advertiserProfile && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-muted text-muted-foreground border-border">
+                              Not an Advertiser
+                            </span>
+                          )}
+                          {isPending && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-amber-100 text-amber-800 border-amber-200">
+                              Pending Review
+                            </span>
+                          )}
+                          {isApproved && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-green-100 text-green-800 border-green-200">
+                              ✓ Approved
+                            </span>
+                          )}
+                          {isRejected && (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-red-100 text-red-800 border-red-200">
+                              Rejected
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Balance — only for approved */}
+                      {isApproved && advertiserProfile && (
+                        <div className="flex items-center justify-between pt-2 border-t border-border">
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                              Balance
+                            </p>
+                            <p className="text-2xl font-bold text-foreground">
+                              ₹{advertiserProfile.balance.toString()}
+                            </p>
+                          </div>
+                          <TrendingUp className="h-8 w-8 text-primary opacity-20" />
+                        </div>
+                      )}
+
+                      {/* Status-specific notes */}
+                      {isPending && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          Your application is under review. Admin will approve
+                          or reject it soon.
+                        </p>
+                      )}
+                      {isApproved && (
+                        <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                          Your account is approved! Campaign creation coming
+                          soon.
+                        </p>
+                      )}
+                      {isRejected && (
+                        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                          Your application was rejected. Contact support for
+                          more information.
+                        </p>
+                      )}
+
+                      {/* Apply button — only if no application yet */}
+                      {!advertiserProfile && (
+                        <Button
+                          onClick={() => void handleApplyForAdvertiser()}
+                          disabled={applyMutation.isPending}
+                          className="w-full"
+                          data-ocid="monetization.apply.primary_button"
+                        >
+                          {applyMutation.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Submitting…
+                            </>
+                          ) : (
+                            <>
+                              <TrendingUp className="mr-2 h-4 w-4" />
+                              Become Advertiser
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* How it works */}
+                <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+                  <p className="font-medium mb-0.5">How it works</p>
+                  <ol className="list-decimal list-inside space-y-1 text-xs text-blue-700 mt-1">
+                    <li>Apply to become an advertiser</li>
+                    <li>Admin reviews and approves your application</li>
+                    <li>Admin adds balance to your account</li>
+                    <li>Create campaigns and reach users (coming soon)</li>
+                  </ol>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* Account Tab */}
           {activeTab === "account" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -583,27 +757,42 @@ export default function OwnerDashboardPage() {
               >
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                    Principal
+                    Email
                   </p>
-                  <code className="text-sm font-mono break-all">
-                    {identity?.getPrincipal().toString()}
-                  </code>
+                  <p className="text-sm font-medium">{userEmail ?? "—"}</p>
                 </div>
+                {identity && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                      Principal
+                    </p>
+                    <code className="text-sm font-mono break-all">
+                      {identity.getPrincipal().toString()}
+                    </code>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
                     Role
                   </p>
                   <p className="text-sm font-medium">
-                    {role && "admin" in role
+                    {auth.role === "admin"
                       ? "Administrator"
-                      : role && "user" in role
-                        ? "Website Owner"
-                        : "Guest"}
+                      : auth.role === "advertiser"
+                        ? "Advertiser"
+                        : role && "admin" in role
+                          ? "Administrator"
+                          : role && "user" in role
+                            ? "Website Owner"
+                            : "User"}
                   </p>
                 </div>
                 <Button
                   variant="outline"
-                  onClick={clear}
+                  onClick={() => {
+                    auth.logout();
+                    void navigate({ to: "/login" });
+                  }}
                   className="gap-1.5 text-destructive hover:text-destructive"
                   data-ocid="account.logout.button"
                 >

@@ -62,6 +62,16 @@ export interface AccessControlUserRole {
     // from authorization mixin
 }
 
+export type AdvertiserStatusVariant = { pending: null } | { approved: null } | { rejected: null };
+
+export interface AdvertiserProfile {
+    email: string;
+    status: AdvertiserStatusVariant;
+    balance: bigint;
+    appliedAt: bigint;
+    reviewedAt: Option<bigint>;
+}
+
 export interface backendInterface {
     // Authorization (from mixin)
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
@@ -104,4 +114,12 @@ export interface backendInterface {
 
     // Click tracking
     recordClick(url: string): Promise<void>;
+
+    // Advertiser / Monetization
+    applyForAdvertiser(email: string): Promise<void>;
+    getMyAdvertiserProfile(email: string): Promise<[] | [AdvertiserProfile]>;
+    getAllAdvertiserApplications(): Promise<AdvertiserProfile[]>;
+    approveAdvertiser(email: string): Promise<void>;
+    rejectAdvertiser(email: string): Promise<void>;
+    addAdvertiserBalance(email: string, amount: bigint): Promise<void>;
 }

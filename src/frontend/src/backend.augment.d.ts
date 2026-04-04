@@ -4,6 +4,7 @@
 // NOTE: config.ts returns Backend as backendInterface — we augment both.
 import type { Principal } from "@icp-sdk/core/principal";
 import type {
+  AdvertiserProfile,
   BlacklistEntry,
   Option,
   ReviewAction,
@@ -60,6 +61,14 @@ declare module "./backend" {
 
     // Click tracking
     recordClick(url: string): Promise<void>;
+
+    // Advertiser / Monetization
+    applyForAdvertiser(email: string): Promise<void>;
+    getMyAdvertiserProfile(email: string): Promise<[] | [AdvertiserProfile]>;
+    getAllAdvertiserApplications(): Promise<AdvertiserProfile[]>;
+    approveAdvertiser(email: string): Promise<void>;
+    rejectAdvertiser(email: string): Promise<void>;
+    addAdvertiserBalance(email: string, amount: bigint): Promise<void>;
   }
 
   // Augment the Backend class so config.ts's createActor return type is compatible

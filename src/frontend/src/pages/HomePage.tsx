@@ -3,12 +3,12 @@ import {
   Bookmark,
   ChevronRight,
   Cloud,
-  Lock,
   Menu,
   Search,
   Share2,
   Sun,
   TrendingUp,
+  User,
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -33,9 +33,6 @@ type WeatherState =
   | { status: "error"; message: string };
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const ADMIN_USERNAME = "aflino_admin";
-const ADMIN_PASSWORD = "Aflino@2026";
 
 const CATEGORY_CHIPS = [
   { label: "Shopping", emoji: "🛍️" },
@@ -199,147 +196,27 @@ function WeatherCard() {
   );
 }
 
-// ── AdminLoginModal ───────────────────────────────────────────────────────────
-
-function AdminLoginModal({
-  onClose,
-  onSuccess,
-  loginAsAdmin,
-}: {
-  onClose: () => void;
-  onSuccess: () => void;
-  loginAsAdmin: () => void;
-}) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = () => {
-    setError("");
-    setLoading(true);
-    setTimeout(() => {
-      if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-        loginAsAdmin();
-        setLoading(false);
-        onSuccess();
-      } else {
-        setError("Invalid username or password.");
-        setLoading(false);
-      }
-    }, 400);
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") handleLogin();
-  };
-
-  return (
-    <dialog
-      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center px-4 border-0 p-0 max-w-none w-full h-full m-0"
-      aria-modal="true"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
-    >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-[#006AFF]" />
-            <span className="font-semibold text-[#111827] text-base">
-              Admin Login
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-gray-100 text-[#6B7280] transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <div className="space-y-3">
-          <div>
-            <label
-              className="block text-xs font-medium text-[#374151] mb-1"
-              htmlFor="admin-username"
-            >
-              Username
-            </label>
-            <input
-              id="admin-username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter username"
-              className="w-full px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none focus:border-[#006AFF] focus:ring-2 focus:ring-[#006AFF]/10 transition-all"
-              autoComplete="username"
-            />
-          </div>
-          <div>
-            <label
-              className="block text-xs font-medium text-[#374151] mb-1"
-              htmlFor="admin-password"
-            >
-              Password
-            </label>
-            <input
-              id="admin-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter password"
-              className="w-full px-3 py-2.5 rounded-xl border border-[#E5E7EB] text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none focus:border-[#006AFF] focus:ring-2 focus:ring-[#006AFF]/10 transition-all"
-              autoComplete="current-password"
-            />
-          </div>
-
-          {error && (
-            <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={handleLogin}
-            disabled={loading || !username || !password}
-            className="w-full py-2.5 rounded-xl bg-[#006AFF] text-white text-sm font-semibold hover:bg-[#0052CC] transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-1"
-          >
-            {loading ? "Verifying…" : "Login to Admin Panel"}
-          </button>
-        </div>
-      </div>
-    </dialog>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { identity, clear } = useInternetIdentity();
-  const isAuthenticated = !!identity;
   const { data: role } = useGetCallerRole();
   const {
-    isAuthenticated: isLocalAdmin,
+    isAuthenticated: isLocalAuth,
     role: authRole,
-    loginAsAdmin,
+    user: authUser,
     logout: authLogout,
   } = useAuth();
 
   const isAdmin = authRole === "admin" || (role && "admin" in role);
-  const isUser = !isLocalAdmin && role && "user" in role;
+  const isUserLoggedIn = isLocalAuth && authRole === "user";
 
   // Admin-configurable logo URLs from localStorage
   const headerLogoUrl =
@@ -350,6 +227,21 @@ export default function HomePage() {
     typeof localStorage !== "undefined"
       ? localStorage.getItem("aflino_searchbar_icon_url") || ""
       : "";
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(e.target as Node)
+      ) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileMenuOpen]);
 
   const handleSearch = (q?: string) => {
     const term = (q ?? query).trim();
@@ -365,16 +257,20 @@ export default function HomePage() {
 
   const closeMenu = () => setMenuOpen(false);
 
-  const handleAdminLoginSuccess = () => {
-    setAdminLoginOpen(false);
-    closeMenu();
-    void navigate({ to: "/admin" });
-  };
-
   const handleAdminLogout = () => {
     authLogout();
+    clear();
     closeMenu();
   };
+
+  const handleUserLogout = () => {
+    authLogout();
+    setProfileMenuOpen(false);
+    void navigate({ to: "/" });
+  };
+
+  // Get user initials for avatar
+  const userInitial = authUser ? authUser.charAt(0).toUpperCase() : "U";
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -407,16 +303,92 @@ export default function HomePage() {
           </span>
         </Link>
 
-        {/* Right: Hamburger */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          className="p-2 rounded-full hover:bg-gray-100 transition-colors text-[#6B7280]"
-          aria-label="Open menu"
-          data-ocid="header.menu.open_modal_button"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        {/* Right: Profile icon + Hamburger */}
+        <div className="flex items-center gap-2">
+          {/* Profile icon — only when user is logged in */}
+          {isUserLoggedIn && (
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((o) => !o)}
+                className="h-8 w-8 rounded-full bg-[#006AFF] flex items-center justify-center text-white text-xs font-semibold hover:bg-[#0052CC] transition-colors"
+                aria-label={`Profile menu for ${authUser}`}
+                aria-expanded={profileMenuOpen}
+                aria-haspopup="menu"
+                data-ocid="header.profile.button"
+              >
+                {authUser ? (
+                  <span className="text-xs font-bold">{userInitial}</span>
+                ) : (
+                  <User className="h-4 w-4" />
+                )}
+              </button>
+
+              {/* Dropdown */}
+              {profileMenuOpen && (
+                <div
+                  className="absolute right-0 top-10 bg-white rounded-xl border border-[#E5E7EB] shadow-lg w-48 z-50 py-1"
+                  role="menu"
+                  data-ocid="header.profile.dropdown_menu"
+                >
+                  {/* User email */}
+                  {authUser && (
+                    <div className="px-4 py-2 border-b border-[#F3F4F6]">
+                      <p className="text-xs text-[#9CA3AF] truncate">
+                        {authUser}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void navigate({ to: "/dashboard" });
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-[#374151] hover:bg-[#F9FAFB] transition-colors"
+                    data-ocid="profile.dashboard.link"
+                  >
+                    Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      void navigate({ to: "/submit" });
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-[#374151] hover:bg-[#F9FAFB] transition-colors"
+                    data-ocid="profile.submit.link"
+                  >
+                    Submit Website
+                  </button>
+                  <div className="border-t border-[#F3F4F6] my-1" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleUserLogout}
+                    className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                    data-ocid="profile.logout.button"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Hamburger */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className="p-2 rounded-full hover:bg-gray-100 transition-colors text-[#6B7280]"
+            aria-label="Open menu"
+            data-ocid="header.menu.open_modal_button"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       {/* ── Hamburger Slide Panel ── */}
@@ -450,20 +422,20 @@ export default function HomePage() {
 
         {/* Panel content */}
         <nav className="flex flex-col gap-2 p-5 flex-1">
-          {/* Sign In / Register — only if not authenticated via Internet Identity */}
-          {!isAuthenticated && (
+          {/* Not logged in: show Login link */}
+          {!isLocalAuth && (
             <Link
-              to="/register"
+              to="/login"
               onClick={closeMenu}
               className="block px-4 py-3 rounded-xl border border-[#006AFF] text-[#006AFF] text-sm font-semibold text-center hover:bg-[#006AFF] hover:text-white transition-colors"
               data-ocid="menu.login.link"
             >
-              Sign In / Register
+              Sign In
             </Link>
           )}
 
-          {/* My Dashboard */}
-          {isAuthenticated && isUser && (
+          {/* My Dashboard (for Internet Identity users) */}
+          {!!identity && !isAdmin && (
             <Link
               to="/dashboard"
               onClick={closeMenu}
@@ -474,20 +446,8 @@ export default function HomePage() {
             </Link>
           )}
 
-          {/* Admin Panel (for Internet Identity admin) */}
-          {isAuthenticated && isAdmin && (
-            <Link
-              to="/admin"
-              onClick={closeMenu}
-              className="block px-4 py-3 rounded-xl border border-[#E5E7EB] text-[#374151] text-sm font-medium hover:bg-[#F9FAFB] transition-colors"
-              data-ocid="menu.admin.link"
-            >
-              Admin Panel
-            </Link>
-          )}
-
           {/* Admin Panel (for local admin session) */}
-          {isLocalAdmin && (
+          {isAdmin && (
             <Link
               to="/admin"
               onClick={closeMenu}
@@ -511,24 +471,20 @@ export default function HomePage() {
           {/* Divider */}
           <div className="border-t border-[#E5E7EB] my-1" />
 
-          {/* Admin Login -- always visible */}
-          {!isLocalAdmin && (
+          {/* Admin Sign Out */}
+          {isAdmin && (
             <button
               type="button"
-              onClick={() => {
-                closeMenu();
-                setAdminLoginOpen(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E5E7EB] text-[#6B7280] text-sm font-medium hover:bg-[#F9FAFB] hover:text-[#374151] transition-colors w-full text-left"
-              data-ocid="menu.admin_login.button"
+              onClick={handleAdminLogout}
+              className="px-4 py-2 text-sm text-[#9CA3AF] hover:text-red-500 transition-colors text-left"
+              data-ocid="menu.admin_logout.button"
             >
-              <Lock className="h-3.5 w-3.5" />
-              Admin Login
+              Admin Sign Out
             </button>
           )}
 
-          {/* Sign Out */}
-          {isAuthenticated && (
+          {/* Internet Identity Sign Out (non-admin ICP users) */}
+          {!!identity && !isAdmin && (
             <button
               type="button"
               onClick={() => {
@@ -541,29 +497,8 @@ export default function HomePage() {
               Sign Out
             </button>
           )}
-
-          {/* Admin Logout */}
-          {isLocalAdmin && (
-            <button
-              type="button"
-              onClick={handleAdminLogout}
-              className="px-4 py-2 text-sm text-[#9CA3AF] hover:text-red-500 transition-colors text-left"
-              data-ocid="menu.admin_logout.button"
-            >
-              Admin Sign Out
-            </button>
-          )}
         </nav>
       </div>
-
-      {/* ── Admin Login Modal ── */}
-      {adminLoginOpen && (
-        <AdminLoginModal
-          onClose={() => setAdminLoginOpen(false)}
-          onSuccess={handleAdminLoginSuccess}
-          loginAsAdmin={loginAsAdmin}
-        />
-      )}
 
       {/* ── Main Content ── */}
       <main className="flex-1 flex flex-col items-center px-4 pt-10 pb-16">
