@@ -46,6 +46,7 @@ import {
   Pause,
   Play,
   Plus,
+  RefreshCw,
   Rocket,
   Search,
   Shield,
@@ -90,6 +91,7 @@ import {
   useRemoveFromBlacklist,
   useResumeCampaign,
   useReviewFlaggedDomain,
+  useRunOwnershipCleanup,
   useSetAdsEnabled,
 } from "../hooks/useQueries";
 import {
@@ -509,6 +511,7 @@ function WebsitesSection() {
   const rejectMutation = useRejectWebsite();
   const deleteMutation = useDeleteWebsite();
   const importMutation = useImportSeedData();
+  const cleanupMutation = useRunOwnershipCleanup();
 
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected"
@@ -518,6 +521,23 @@ function WebsitesSection() {
   const [seedOpen, setSeedOpen] = useState(false);
   const [seedJson, setSeedJson] = useState("");
   const [seedError, setSeedError] = useState("");
+
+  const handleOwnershipCleanup = async () => {
+    if (
+      !confirm(
+        "This will mark all websites with expired verification (>90 days) as expired. Continue?",
+      )
+    )
+      return;
+    try {
+      const count = await cleanupMutation.mutateAsync();
+      toast.success(
+        `Cleanup complete. ${count.toString()} sites marked as expired.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cleanup failed");
+    }
+  };
 
   const filtered = allWebsites
     .filter((s) => {
@@ -621,12 +641,39 @@ function WebsitesSection() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6"
     >
-      <div>
-        <h1 className="font-display text-2xl font-bold">Websites</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Manage all submitted and indexed websites. Duplicate domains are
-          automatically blocked by the backend.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold">Websites</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Manage all submitted and indexed websites. Duplicate domains are
+            automatically blocked by the backend.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleOwnershipCleanup()}
+            disabled={cleanupMutation.isPending}
+            className="gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50"
+            data-ocid="websites.cleanup.button"
+          >
+            {cleanupMutation.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Running…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3.5 w-3.5" />
+                Run Ownership Cleanup
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-muted-foreground max-w-[220px] text-right">
+            Marks sites with expired verification (&gt;90 days) as expired.
+          </p>
+        </div>
       </div>
 
       {/* Filters */}

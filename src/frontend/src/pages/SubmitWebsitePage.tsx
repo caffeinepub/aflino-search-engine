@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, CheckCircle2, Globe, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useSubmitWebsite } from "../hooks/useQueries";
 import {
@@ -23,6 +24,7 @@ export default function SubmitWebsitePage() {
   const [keywords, setKeywords] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
+  const auth = useAuth();
   const { identity } = useInternetIdentity();
   const submitMutation = useSubmitWebsite();
 
@@ -57,6 +59,7 @@ export default function SubmitWebsitePage() {
 
     try {
       await submitMutation.mutateAsync({
+        ownerId: auth.user ?? "",
         url: cleanUrl,
         title: cleanTitle,
         description: cleanDesc,

@@ -17,7 +17,7 @@ export function useSearchWebsites(query: string) {
     queryKey: ["search", query],
     queryFn: async () => {
       if (!actor || !query.trim()) return [];
-      return actor.searchWebsites(query);
+      return actor.searchWebsites(query) as unknown as Website[];
     },
     enabled: !!actor && !isFetching && !!query.trim(),
   });
@@ -42,9 +42,22 @@ export function useGetMyWebsites() {
     queryKey: ["myWebsites"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getMyWebsites();
+      return actor.getMyWebsites() as unknown as Website[];
     },
     enabled: !!actor && !isFetching,
+  });
+}
+
+export function useGetMyWebsitesByEmail(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Website[]>({
+    queryKey: ["myWebsitesByEmail", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).getMyWebsitesByEmail(email) as Website[];
+    },
+    enabled: !!actor && !isFetching && !!email,
   });
 }
 
@@ -54,7 +67,7 @@ export function useGetAllWebsites() {
     queryKey: ["allWebsites"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getAllWebsites();
+      return actor.getAllWebsites() as unknown as Website[];
     },
     enabled: !!actor && !isFetching,
   });
@@ -66,7 +79,7 @@ export function useGetPendingWebsites() {
     queryKey: ["pendingWebsites"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getPendingWebsites();
+      return actor.getPendingWebsites() as unknown as Website[];
     },
     enabled: !!actor && !isFetching,
   });
@@ -89,21 +102,25 @@ export function useSubmitWebsite() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: {
+      ownerId: string;
       url: string;
       title: string;
       description: string;
       keywords: string[];
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.submitWebsite(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).submitWebsite(
+        data.ownerId,
         data.url,
         data.title,
         data.description,
         data.keywords,
-      );
+      ) as Website;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsitesByEmail"] });
     },
   });
 }
@@ -114,7 +131,7 @@ export function useApproveWebsite() {
   return useMutation({
     mutationFn: async (id: bigint) => {
       if (!actor) throw new Error("Not connected");
-      return actor.approveWebsite(id);
+      return actor.approveWebsite(id) as unknown as Website;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["pendingWebsites"] });
@@ -130,7 +147,7 @@ export function useRejectWebsite() {
   return useMutation({
     mutationFn: async (id: bigint) => {
       if (!actor) throw new Error("Not connected");
-      return actor.rejectWebsite(id);
+      return actor.rejectWebsite(id) as unknown as Website;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["pendingWebsites"] });
@@ -171,7 +188,7 @@ export function useEditWebsite() {
         data.title,
         data.description,
         data.keywords,
-      );
+      ) as unknown as Website;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
@@ -216,6 +233,7 @@ export function useVerifyDomain() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsitesByEmail"] });
     },
   });
 }
@@ -574,6 +592,45 @@ export function useSetAdsEnabled() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["adsEnabled"] });
+    },
+  });
+}
+
+// ── Ownership & Reclaim hooks ─────────────────────────────────
+
+export function useReclaimDomain() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { websiteId: bigint; newOwnerEmail: string }) => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).reclaimDomain(
+        data.websiteId,
+        data.newOwnerEmail,
+      ) as Website;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsitesByEmail"] });
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+    },
+  });
+}
+
+export function useRunOwnershipCleanup() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).runOwnershipCleanup() as Promise<bigint>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsitesByEmail"] });
     },
   });
 }

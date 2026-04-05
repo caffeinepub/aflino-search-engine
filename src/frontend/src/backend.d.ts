@@ -39,7 +39,8 @@ export interface Website {
     url: string;
     status: WebsiteStatus;
     title: string;
-    ownerPrincipal: Principal;
+    ownerId: string;
+    ownerPrincipal?: Principal;
     approvedAt?: bigint;
     verificationToken: string;
     submittedAt: bigint;
@@ -47,6 +48,17 @@ export interface Website {
     isSeed: boolean;
     keywords: Array<string>;
     isVerified: boolean;
+    // Search Center fields
+    indexStatus?: IndexStatus;
+    sitemapUrl?: string;
+    lastCheckedAt?: bigint;
+    lastCrawledAt?: bigint;
+    // V3 Ownership fields
+    ownershipStatus: OwnershipStatus;
+    verificationStatus: VerificationStatus;
+    lastVerifiedAt?: bigint;
+    verificationExpiryAt?: bigint;
+    ownerHistory: Array<string>;
 }
 export interface http_header {
     value: string;
@@ -127,6 +139,22 @@ export enum WebsiteStatus {
     approved = "approved",
     rejected = "rejected"
 }
+export enum OwnershipStatus {
+    active = "active",
+    expired = "expired",
+    reclaimed = "reclaimed"
+}
+export enum VerificationStatus {
+    pending = "pending",
+    verified = "verified",
+    expired = "expired"
+}
+export enum IndexStatus {
+    notIndexed = "notIndexed",
+    pending = "pending",
+    indexed = "indexed",
+    error = "error"
+}
 export interface backendInterface {
     addAdvertiserBalance(email: string, amount: bigint): Promise<void>;
     addToBlacklist(domain: string, reason: string): Promise<void>;
@@ -149,6 +177,7 @@ export interface backendInterface {
     getMyAdvertiserProfile(email: string): Promise<AdvertiserProfile | null>;
     getMyCampaigns(email: string): Promise<Array<Campaign>>;
     getMyWebsites(): Promise<Array<Website>>;
+    getMyWebsitesByEmail(email: string): Promise<Array<Website>>;
     getPendingWebsites(): Promise<Array<Website>>;
     getSecurityLogs(): Promise<Array<SecurityLog>>;
     getStats(): Promise<Stats>;
@@ -157,19 +186,23 @@ export interface backendInterface {
     importSeedData(entries: Array<SeedEntry>): Promise<bigint>;
     isCallerAdmin(): Promise<boolean>;
     pauseCampaign(campaignId: bigint): Promise<void>;
+    reclaimDomain(websiteId: bigint, newOwnerEmail: string): Promise<Website>;
     recordAdClick(campaignId: bigint, userSession: string): Promise<Result>;
     recordAdImpression(campaignId: bigint): Promise<void>;
     recordClick(url: string): Promise<void>;
     rejectAdvertiser(email: string): Promise<void>;
     rejectWebsite(websiteId: bigint): Promise<Website>;
     removeFromBlacklist(domain: string): Promise<void>;
+    requestIndexing(websiteId: bigint, pageUrl: string): Promise<Website>;
     resumeCampaign(campaignId: bigint): Promise<void>;
     reviewFlaggedDomain(domain: string, action: Variant_remove_approve_block): Promise<void>;
+    runOwnershipCleanup(): Promise<bigint>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     searchWebsites(searchQuery: string): Promise<Array<Website>>;
     setAdsEnabled(enabled: boolean): Promise<void>;
-    submitWebsite(url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
+    submitWebsite(ownerId: string, url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateCampaign(campaignId: bigint, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
+    updateSitemap(websiteId: bigint, sitemapUrl: string): Promise<Website>;
     verifyDomain(websiteId: bigint): Promise<boolean>;
 }

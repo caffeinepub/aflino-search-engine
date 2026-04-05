@@ -19,6 +19,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertTriangle,
+  Clock,
   Copy,
   ExternalLink,
   Globe,
@@ -44,6 +46,7 @@ import {
   useGetMyAdvertiserProfile,
   useGetMyCampaigns,
   useGetMyWebsites,
+  useGetMyWebsitesByEmail,
   useGetVerificationToken,
   usePauseCampaign,
   useResumeCampaign,
@@ -61,6 +64,96 @@ import {
 // Helper: ICP runtime returns variant objects; cast for in-operator checks
 function hasKey(obj: unknown, key: string): boolean {
   return typeof obj === "object" && obj !== null && key in obj;
+}
+
+// Helper: calculate days until expiry from nanosecond bigint timestamp
+function getDaysUntilExpiry(expiryNs: bigint | undefined): number | null {
+  if (!expiryNs) return null;
+  const nowNs = BigInt(Date.now()) * BigInt(1_000_000);
+  const diffNs = expiryNs - nowNs;
+  if (diffNs <= 0n) return 0;
+  return Math.floor(Number(diffNs / BigInt(86_400_000_000_000)));
+}
+
+// Helper: render expiry countdown badge
+function ExpiryBadge({ expiryNs }: { expiryNs: bigint | undefined }) {
+  const days = getDaysUntilExpiry(expiryNs);
+  if (days === null) return null;
+  if (days === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+        <Clock className="h-3 w-3" /> Expired
+      </span>
+    );
+  }
+  const colorClass =
+    days > 30
+      ? "text-green-700 bg-green-50 border-green-200"
+      : days > 7
+        ? "text-amber-700 bg-amber-50 border-amber-200"
+        : "text-red-700 bg-red-50 border-red-200";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs font-medium border rounded-full px-2 py-0.5 ${colorClass}`}
+    >
+      <Clock className="h-3 w-3" /> Expires in {days}d
+    </span>
+  );
+}
+
+// Helper: ownership status badge
+function OwnershipBadge({ website }: { website: Website }) {
+  const ownershipStatus = website.ownershipStatus as unknown;
+  if (hasKey(ownershipStatus, "active")) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+        Active
+      </span>
+    );
+  }
+  if (hasKey(ownershipStatus, "expired")) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+        Expired
+      </span>
+    );
+  }
+  if (hasKey(ownershipStatus, "reclaimed")) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+        Reclaimed
+      </span>
+    );
+  }
+  return null;
+}
+
+// Helper: verification status badge (V3)
+function VerificationStatusBadge({ website }: { website: Website }) {
+  const verificationStatus = website.verificationStatus as unknown;
+  if (hasKey(verificationStatus, "verified")) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+        <ShieldCheck className="h-3.5 w-3.5" /> Verified
+      </span>
+    );
+  }
+  if (hasKey(verificationStatus, "expired")) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+        <AlertTriangle className="h-3.5 w-3.5" /> Expired
+      </span>
+    );
+  }
+  // Fallback: use legacy isVerified
+  if (website.isVerified) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+        <ShieldCheck className="h-3.5 w-3.5" /> Verified
+      </span>
+    );
+  }
+  return <span className="text-xs text-muted-foreground">Pending</span>;
 }
 
 type SidebarTab = "my-websites" | "submit" | "account" | "monetization";
@@ -579,7 +672,17 @@ export default function OwnerDashboardPage() {
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [keywordsError, setKeywordsError] = useState<string | null>(null);
 
-  const { data: websites = [], isLoading } = useGetMyWebsites();
+  const { data: websitesByEmail = [], isLoading: emailLoading } =
+    useGetMyWebsitesByEmail(userEmail);
+  const { data: websitesByPrincipal = [], isLoading: principalLoading } =
+    useGetMyWebsites();
+  // Prefer email-based results when email is available; fall back to principal
+  const websites = userEmail
+    ? websitesByEmail.length > 0
+      ? websitesByEmail
+      : websitesByPrincipal
+    : websitesByPrincipal;
+  const isLoading = userEmail ? emailLoading : principalLoading;
   const submitMutation = useSubmitWebsite();
 
   // Monetization
@@ -615,6 +718,7 @@ export default function OwnerDashboardPage() {
 
     try {
       await submitMutation.mutateAsync({
+        ownerId: userEmail ?? "",
         url: sanitizeText(formUrl),
         title: sanitizeText(formTitle),
         description: sanitizeText(formDescription),
@@ -762,6 +866,39 @@ export default function OwnerDashboardPage() {
                 </Button>
               </div>
 
+              {/* Expired ownership warning banners */}
+              {websites.some(
+                (s) =>
+                  hasKey(s.ownershipStatus as unknown, "expired") ||
+                  hasKey(s.verificationStatus as unknown, "expired"),
+              ) && (
+                <div
+                  className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-1"
+                  data-ocid="dashboard.websites.error_state"
+                >
+                  <div className="flex items-center gap-2 text-red-700 font-medium text-sm">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    Ownership expired
+                  </div>
+                  {websites
+                    .filter(
+                      (s) =>
+                        hasKey(s.ownershipStatus as unknown, "expired") ||
+                        hasKey(s.verificationStatus as unknown, "expired"),
+                    )
+                    .map((s) => (
+                      <p
+                        key={s.id.toString()}
+                        className="text-xs text-red-600 ml-6"
+                      >
+                        <strong>{new URL(s.url).hostname}</strong> — Your
+                        ownership has expired. Please re-verify to keep your
+                        site active.
+                      </p>
+                    ))}
+                </div>
+              )}
+
               {isLoading ? (
                 <div
                   className="flex items-center gap-2 py-8 text-muted-foreground"
@@ -798,7 +935,8 @@ export default function OwnerDashboardPage() {
                       <TableRow className="bg-muted/50">
                         <TableHead>Website</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Verified</TableHead>
+                        <TableHead>Ownership</TableHead>
+                        <TableHead>Verification</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -833,18 +971,27 @@ export default function OwnerDashboardPage() {
                             />
                           </TableCell>
                           <TableCell>
-                            {site.isVerified ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
-                                <ShieldCheck className="h-3.5 w-3.5" /> Verified
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                Unverified
-                              </span>
-                            )}
+                            <OwnershipBadge website={site} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <VerificationStatusBadge website={site} />
+                              {hasKey(
+                                site.verificationStatus as unknown,
+                                "verified",
+                              ) && (
+                                <ExpiryBadge
+                                  expiryNs={site.verificationExpiryAt}
+                                />
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            {!site.isVerified && (
+                            {(!site.isVerified ||
+                              hasKey(
+                                site.verificationStatus as unknown,
+                                "expired",
+                              )) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -852,7 +999,12 @@ export default function OwnerDashboardPage() {
                                 data-ocid={`dashboard.verify.button.${i + 1}`}
                               >
                                 <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-                                Verify
+                                {hasKey(
+                                  site.verificationStatus as unknown,
+                                  "expired",
+                                )
+                                  ? "Re-verify"
+                                  : "Verify"}
                               </Button>
                             )}
                           </TableCell>

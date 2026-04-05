@@ -25,13 +25,8 @@ declare module "./backend" {
     isCallerAdmin(): Promise<boolean>;
     searchWebsites(searchQuery: string): Promise<Website[]>;
     getStats(): Promise<Stats>;
-    submitWebsite(
-      url: string,
-      title: string,
-      description: string,
-      keywords: string[],
-    ): Promise<Website>;
     getMyWebsites(): Promise<Website[]>;
+    getMyWebsitesByEmail(email: string): Promise<Website[]>;
     getVerificationToken(websiteId: bigint): Promise<string>;
     verifyDomain(websiteId: bigint): Promise<boolean>;
     approveWebsite(websiteId: bigint): Promise<Website>;
@@ -46,6 +41,12 @@ declare module "./backend" {
     getAllWebsites(): Promise<Website[]>;
     getPendingWebsites(): Promise<Website[]>;
     importSeedData(entries: SeedEntry[]): Promise<bigint>;
+
+    // V3 Ownership system
+    reclaimDomain(websiteId: bigint, newOwnerEmail: string): Promise<Website>;
+    runOwnershipCleanup(): Promise<bigint>;
+    requestIndexing(websiteId: bigint, pageUrl: string): Promise<Website>;
+    updateSitemap(websiteId: bigint, sitemapUrl: string): Promise<Website>;
 
     // Security: logs
     getSecurityLogs(): Promise<SecurityLog[]>;

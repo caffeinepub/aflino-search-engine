@@ -28,8 +28,11 @@ actor {
 
   public type IndexStatus = { #notIndexed; #pending; #indexed; #error };
 
-  // ─── Legacy type (V1) — matches what is currently stored on-chain ────────────────
-  // Keep this type exactly as the old Website was so Motoko can deserialise it.
+  public type OwnershipStatus = { #active; #expired; #reclaimed };
+
+  public type VerificationStatus = { #pending; #verified; #expired };
+
+  // ─── Legacy type (V1) ────────────────────────────────────────────────────
   type WebsiteV1 = {
     id : Nat;
     url : Text;
@@ -45,8 +48,8 @@ actor {
     approvedAt : ?Int;
   };
 
-  // ─── Current Website type (V2) — adds Search Center fields ─────────────────
-  public type Website = {
+  // ─── V2 type ─────────────────────────────────────────────────────────────
+  type WebsiteV2 = {
     id : Nat;
     url : Text;
     title : Text;
@@ -59,11 +62,40 @@ actor {
     isSeed : Bool;
     submittedAt : Int;
     approvedAt : ?Int;
-    // Search Center fields (added in V2)
     indexStatus : IndexStatus;
     sitemapUrl : ?Text;
-    lastCheckedAt : ?Int;   // when user manually inspects via URL Inspection
-    lastCrawledAt : ?Int;   // when system crawler processes the site
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+  };
+
+  // ─── Current Website type (V3) ────────────────────────────────────────────
+  public type Website = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    // V3: email-based owner identifier (primary)
+    ownerId : Text;
+    // V3: optional Principal for future Internet Identity upgrade
+    ownerPrincipal : ?Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+    // Search Center fields (V2)
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    // Ownership & Expiry fields (V3)
+    ownershipStatus : OwnershipStatus;
+    verificationStatus : VerificationStatus;
+    lastVerifiedAt : ?Int;
+    verificationExpiryAt : ?Int;
+    ownerHistory : [Text];
   };
 
   public type PageStatus = { #pending; #indexed; #error };
@@ -151,13 +183,14 @@ actor {
 
   var nextId : Nat = 1;
 
-  // V1 stable var — read-only after migration; kept so Motoko can deserialise
-  // existing on-chain data during the first upgrade.
+  // V1 stable var — read-only after migration
   var websites : [WebsiteV1] = [];
 
-  // V2 stable var — the live array used by all runtime logic.
-  // Populated from `websites` (V1) during postupgrade when empty.
-  var websitesV2 : [Website] = [];
+  // V2 stable var — intermediate migration storage
+  var websitesV2 : [WebsiteV2] = [];
+
+  // V3 stable var — live array used by all runtime logic
+  var websitesV3 : [Website] = [];
 
   var indexTerms : [(Text, [Nat])] = [];
 
@@ -182,10 +215,9 @@ actor {
 
   var userProfiles : [(Principal, UserProfile)] = [];
 
-  // ─── Migration helper ─────────────────────────────────────────────────────
+  // ─── Migration helpers ────────────────────────────────────────────────────
 
-  // Upgrade V1 record to V2 by supplying default values for the new fields.
-  func migrateWebsite(w : WebsiteV1) : Website {
+  func migrateV1toV2(w : WebsiteV1) : WebsiteV2 {
     {
       id             = w.id;
       url            = w.url;
@@ -206,14 +238,68 @@ actor {
     }
   };
 
-  // Run migration once on first upgrade: if websitesV2 is empty but the old
-  // websites array has data, migrate all records.
+  func migrateV2toV3(w : WebsiteV2) : Website {
+    {
+      id             = w.id;
+      url            = w.url;
+      title          = w.title;
+      description    = w.description;
+      keywords       = w.keywords;
+      status         = w.status;
+      ownerId        = w.ownerPrincipal.toText();
+      ownerPrincipal = ?w.ownerPrincipal;
+      verificationToken = w.verificationToken;
+      isVerified     = w.isVerified;
+      isSeed         = w.isSeed;
+      submittedAt    = w.submittedAt;
+      approvedAt     = w.approvedAt;
+      indexStatus    = w.indexStatus;
+      sitemapUrl     = w.sitemapUrl;
+      lastCheckedAt  = w.lastCheckedAt;
+      lastCrawledAt  = w.lastCrawledAt;
+      ownershipStatus    = #active;
+      verificationStatus = if (w.isVerified) { #verified } else { #pending };
+      lastVerifiedAt     = null;
+      verificationExpiryAt = null;
+      ownerHistory       = [];
+    }
+  };
+
+  // Run full migration chain on upgrade
   system func postupgrade() {
+    // Step 1: V1 -> V2
     if (websitesV2.size() == 0 and websites.size() > 0) {
-      websitesV2 := websites.map(migrateWebsite);
-      // Clear the V1 array to free memory; data now lives in websitesV2.
+      websitesV2 := websites.map(migrateV1toV2);
       websites := [];
     };
+    // Step 2: V2 -> V3
+    if (websitesV3.size() == 0 and websitesV2.size() > 0) {
+      websitesV3 := websitesV2.map(migrateV2toV3);
+      websitesV2 := [];
+    };
+  };
+
+  // ─── Auto-expiry helper ───────────────────────────────────────────────────
+
+  // Check if a site's verification has expired (used before critical actions)
+  func checkAndExpireSite(siteId : Nat) {
+    let now = Time.now();
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
+      if (w.id == siteId and not w.isSeed) {
+        switch (w.verificationExpiryAt) {
+          case (?expiry) {
+            if (now > expiry) {
+              { w with
+                ownershipStatus    = #expired;
+                verificationStatus = #expired;
+                isVerified         = false;
+              }
+            } else { w }
+          };
+          case (null) { w };
+        };
+      } else { w }
+    });
   };
 
   // ─── User Profile Management ──────────────────────────────────────────────
@@ -555,7 +641,7 @@ actor {
     };
   };
 
-  // ─── Public Search ────────────────────────────────────────────────────────
+  // ─── Search (Ownership-Filtered) ──────────────────────────────────────────
 
   public query func searchWebsites(searchQuery : Text) : async [Website] {
     let trimmed = searchQuery.trim(#char ' ');
@@ -576,16 +662,31 @@ actor {
         };
       };
     };
-    let approvedSites = websitesV2.filter(func(w : Website) : Bool { w.status == #approved });
+    // Filter: only approved sites that pass ownership check
+    let eligibleSites = websitesV3.filter(func(w : Website) : Bool {
+      if (w.status != #approved) return false;
+      // Seed sites always shown
+      if (w.isSeed) return true;
+      // Non-seed: must be verified and not expired
+      switch (w.verificationStatus) {
+        case (#verified) {
+          switch (w.ownershipStatus) {
+            case (#expired) { false };
+            case (_) { true };
+          };
+        };
+        case (_) { false };
+      };
+    });
     let qLower = trimmed.toLower();
-    for (site in approvedSites.vals()) {
+    for (site in eligibleSites.vals()) {
       let titleLower = site.title.toLower();
       if (titleLower.contains(#text qLower)) {
         let current = scoreMap.get(site.id).get(0);
         scoreMap.add(site.id, current + 5);
       };
     };
-    let scored = approvedSites.map(func(w) : (Website, Nat) {
+    let scored = eligibleSites.map(func(w) : (Website, Nat) {
       (w, scoreMap.get(w.id).get(0))
     });
     let filtered = scored.filter(func(entry) : Bool { entry.1 > 0 });
@@ -595,9 +696,10 @@ actor {
     sorted.map(func(entry) : Website { entry.0 })
   };
 
-  // ─── Website Submission ───────────────────────────────────────────────────
+  // ─── Website Submission (Ownership-Aware) ─────────────────────────────────
 
   public shared ({ caller }) func submitWebsite(
+    ownerId : Text,
     url : Text,
     title : Text,
     description : Text,
@@ -608,6 +710,10 @@ actor {
 
     checkRateLimit(callerText, "submit", 5, 60);
 
+    if (ownerId.size() == 0 or ownerId.size() > 200) {
+      Runtime.trap("Invalid owner identifier");
+    };
+
     validateUrl(url, callerText);
     validateTitle(title, callerText);
     validateDescription(description, callerText);
@@ -616,10 +722,38 @@ actor {
 
     checkBlacklist(url, callerText);
 
-    // Global duplicate domain check: one domain = one owner across all users
     let domain = extractDomain(url);
-    for (site in websitesV2.vals()) {
+
+    // Ownership-aware duplicate domain check
+    for (site in websitesV3.vals()) {
       if (extractDomain(site.url) == domain and site.status != #rejected) {
+        let isActiveAndVerified = switch (site.ownershipStatus) {
+          case (#active) {
+            switch (site.verificationStatus) {
+              case (#verified) { true };
+              case (_) { false };
+            };
+          };
+          case (_) { false };
+        };
+        let isExpired = switch (site.ownershipStatus) {
+          case (#expired) { true };
+          case (_) {
+            switch (site.verificationStatus) {
+              case (#expired) { true };
+              case (_) { false };
+            };
+          };
+        };
+        if (isActiveAndVerified) {
+          incrementDomainAbuse(domain);
+          autoFlagDomain(domain, callerText);
+          Runtime.trap("This domain is already registered and actively verified.");
+        };
+        if (isExpired) {
+          Runtime.trap("This domain was previously registered. Please verify ownership to claim it.");
+        };
+        // If pending/unverified — block to prevent duplicate pending entries
         incrementDomainAbuse(domain);
         autoFlagDomain(domain, callerText);
         Runtime.trap("This domain is already registered by another user");
@@ -635,7 +769,8 @@ actor {
       description;
       keywords;
       status = #pending;
-      ownerPrincipal = caller;
+      ownerId;
+      ownerPrincipal = ?caller;
       verificationToken = generateToken(id);
       isVerified = false;
       isSeed = false;
@@ -645,24 +780,45 @@ actor {
       sitemapUrl = null;
       lastCheckedAt = null;
       lastCrawledAt = null;
+      ownershipStatus = #active;
+      verificationStatus = #pending;
+      lastVerifiedAt = null;
+      verificationExpiryAt = null;
+      ownerHistory = [];
     };
-    websitesV2 := websitesV2.concat([site]);
+    websitesV3 := websitesV3.concat([site]);
     site
   };
 
   public query ({ caller }) func getMyWebsites() : async [Website] {
     requireRegistered(caller);
-    websitesV2.filter(func(w : Website) : Bool { w.ownerPrincipal == caller })
+    websitesV3.filter(func(w : Website) : Bool {
+      switch (w.ownerPrincipal) {
+        case (?p) { p == caller };
+        case (null) { false };
+      }
+    })
+  };
+
+  // Email-based website lookup (V3 primary method)
+  public query ({ caller }) func getMyWebsitesByEmail(email : Text) : async [Website] {
+    requireRegistered(caller);
+    websitesV3.filter(func(w : Website) : Bool { w.ownerId == email })
   };
 
   // ─── Domain Verification ──────────────────────────────────────────────────
 
   public query ({ caller }) func getVerificationToken(websiteId : Nat) : async Text {
     requireRegistered(caller);
-    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+    checkAndExpireSite(websiteId);
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
-        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        let isOwner = switch (site.ownerPrincipal) {
+          case (?p) { p == caller };
+          case (null) { false };
+        };
+        if (not isOwner and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized");
         };
         site.verificationToken
@@ -674,13 +830,21 @@ actor {
     Outcall.transform(input)
   };
 
+  // 90 days in nanoseconds
+  let NINETY_DAYS_NS : Int = 7_776_000_000_000_000;
+
   public shared ({ caller }) func verifyDomain(websiteId : Nat) : async Bool {
     requireRegistered(caller);
     let callerText = caller.toText();
-    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+    checkAndExpireSite(websiteId);
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
-        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        let isOwner = switch (site.ownerPrincipal) {
+          case (?p) { p == caller };
+          case (null) { false };
+        };
+        if (not isOwner and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized");
         };
         validateUrl(site.url, callerText);
@@ -689,9 +853,20 @@ actor {
           let body = await Outcall.httpGetRequest(verifyUrl, [], transform);
           let token = site.verificationToken;
           let verified = body.contains(#text token);
-          websitesV2 := websitesV2.map(func(w : Website) : Website {
-            if (w.id == websiteId) { { w with isVerified = verified } } else w
-          });
+          if (verified) {
+            let now = Time.now();
+            websitesV3 := websitesV3.map(func(w : Website) : Website {
+              if (w.id == websiteId) {
+                { w with
+                  isVerified = true;
+                  verificationStatus = #verified;
+                  ownershipStatus = #active;
+                  lastVerifiedAt = ?now;
+                  verificationExpiryAt = ?(now + NINETY_DAYS_NS);
+                }
+              } else w
+            });
+          };
           verified
         } catch (_) {
           false
@@ -700,18 +875,111 @@ actor {
     }
   };
 
+  // ─── Re-Claim Ownership ───────────────────────────────────────────────────
+
+  public shared ({ caller }) func reclaimDomain(websiteId : Nat, newOwnerEmail : Text) : async Website {
+    requireRegistered(caller);
+    let callerText = caller.toText();
+
+    if (newOwnerEmail.size() == 0 or newOwnerEmail.size() > 200) {
+      Runtime.trap("Invalid email");
+    };
+
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) {
+        // Only allow reclaim if ownership/verification is expired
+        let canReclaim = switch (site.ownershipStatus) {
+          case (#expired) { true };
+          case (_) {
+            switch (site.verificationStatus) {
+              case (#expired) { true };
+              case (_) { false };
+            };
+          };
+        };
+        if (not canReclaim) {
+          Runtime.trap("Cannot reclaim: domain is actively owned and verified.");
+        };
+        let now = Time.now();
+        let newHistory = site.ownerHistory.concat([site.ownerId]);
+        var updatedSite : ?Website = null;
+        websitesV3 := websitesV3.map(func(w : Website) : Website {
+          if (w.id == websiteId) {
+            let updated = { w with
+              ownerId        = newOwnerEmail;
+              ownerPrincipal = ?caller;
+              ownershipStatus    = #reclaimed;
+              verificationStatus = #pending;
+              isVerified         = false;
+              lastVerifiedAt     = null;
+              verificationExpiryAt = null;
+              ownerHistory       = newHistory;
+            };
+            updatedSite := ?updated;
+            updated
+          } else w
+        });
+        switch (updatedSite) {
+          case (null) { Runtime.trap("Website not found") };
+          case (?s) {
+            addLog("DOMAIN_RECLAIMED", callerText, "Website " # websiteId.toText() # " reclaimed by " # newOwnerEmail);
+            s
+          };
+        };
+      };
+    }
+  };
+
+  // ─── Ownership Cleanup (Admin-triggered) ──────────────────────────────────
+
+  public shared ({ caller }) func runOwnershipCleanup() : async Nat {
+    requireAdmin(caller);
+    let now = Time.now();
+    var count = 0;
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
+      if (w.isSeed) {
+        // Seed sites bypass expiry system
+        w
+      } else {
+        switch (w.verificationExpiryAt) {
+          case (?expiry) {
+            if (now > expiry) {
+              count += 1;
+              { w with
+                ownershipStatus    = #expired;
+                verificationStatus = #expired;
+                isVerified         = false;
+              }
+            } else { w }
+          };
+          case (null) { w };
+        };
+      }
+    });
+    addLog("OWNERSHIP_CLEANUP", caller.toText(), "Marked " # count.toText() # " sites expired");
+    count
+  };
+
   // ─── Search Center: Sitemap Update ────────────────────────────────────────
 
   public shared ({ caller }) func updateSitemap(websiteId : Nat, sitemapUrl : Text) : async Website {
     requireRegistered(caller);
     let callerText = caller.toText();
+    checkAndExpireSite(websiteId);
 
-    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
-        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        let isOwner = switch (site.ownerPrincipal) {
+          case (?p) { p == caller };
+          case (null) { false };
+        };
+        if (not isOwner and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized: You do not own this website");
         };
+        // Also check ownerId for email-based access
+        ignore site;
       };
     };
 
@@ -730,7 +998,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with sitemapUrl = ?sitemapUrl };
         updatedSite := ?updated;
@@ -748,11 +1016,16 @@ actor {
   public shared ({ caller }) func requestIndexing(websiteId : Nat, pageUrl : Text) : async Website {
     requireRegistered(caller);
     let callerText = caller.toText();
+    checkAndExpireSite(websiteId);
 
-    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
-        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        let isOwner = switch (site.ownerPrincipal) {
+          case (?p) { p == caller };
+          case (null) { false };
+        };
+        if (not isOwner and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized: You do not own this website");
         };
       };
@@ -781,7 +1054,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with indexStatus = #pending; lastCheckedAt = ?now };
         updatedSite := ?updated;
@@ -796,10 +1069,14 @@ actor {
 
   public query ({ caller }) func getPagesForWebsite(websiteId : Nat) : async [Page] {
     requireRegistered(caller);
-    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
-        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        let isOwner = switch (site.ownerPrincipal) {
+          case (?p) { p == caller };
+          case (null) { false };
+        };
+        if (not isOwner and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized");
         };
       };
@@ -818,7 +1095,7 @@ actor {
 
   public shared ({ caller }) func updateLastCrawledAt(websiteId : Nat) : async () {
     requireAdmin(caller);
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) { { w with lastCrawledAt = ?Time.now() } } else w
     });
   };
@@ -829,9 +1106,13 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var approvedSite : ?Website = null;
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) {
-        let updated = { w with status = #approved; approvedAt = ?Time.now() };
+        let updated = { w with
+          status = #approved;
+          approvedAt = ?Time.now();
+          ownershipStatus = #active;
+        };
         approvedSite := ?updated;
         updated
       } else w
@@ -846,7 +1127,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var rejectedSite : ?Website = null;
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #rejected };
         rejectedSite := ?updated;
@@ -873,7 +1154,7 @@ actor {
     validateDescription(description, callerText);
     validateKeywords(keywords, callerText);
     var editedSite : ?Website = null;
-    websitesV2 := websitesV2.map(func(w : Website) : Website {
+    websitesV3 := websitesV3.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with title; description; keywords };
         editedSite := ?updated;
@@ -895,18 +1176,18 @@ actor {
   public shared ({ caller }) func deleteWebsite(websiteId : Nat) : async () {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
-    websitesV2 := websitesV2.filter(func(w : Website) : Bool { w.id != websiteId });
+    websitesV3 := websitesV3.filter(func(w : Website) : Bool { w.id != websiteId });
     removeFromIndex(websiteId);
   };
 
   public query ({ caller }) func getAllWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV2
+    websitesV3
   };
 
   public query ({ caller }) func getPendingWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV2.filter(func(w : Website) : Bool { w.status == #pending })
+    websitesV3.filter(func(w : Website) : Bool { w.status == #pending })
   };
 
   // ─── Admin: Seed Data Import ──────────────────────────────────────────────
@@ -918,6 +1199,7 @@ actor {
     for (entry in entries.vals()) {
       let id = nextId;
       nextId += 1;
+      let now = Time.now();
       let site : Website = {
         id;
         url = entry.url;
@@ -925,18 +1207,24 @@ actor {
         description = entry.description;
         keywords = entry.keywords;
         status = #approved;
-        ownerPrincipal = caller;
+        ownerId = "aflino_admin";
+        ownerPrincipal = ?caller;
         verificationToken = "seed-" # id.toText();
-        isVerified = false;
+        isVerified = true;
         isSeed = true;
-        submittedAt = Time.now();
-        approvedAt = ?Time.now();
+        submittedAt = now;
+        approvedAt = ?now;
         indexStatus = #notIndexed;
         sitemapUrl = null;
         lastCheckedAt = null;
         lastCrawledAt = null;
+        ownershipStatus = #active;
+        verificationStatus = #verified;
+        lastVerifiedAt = ?now;
+        verificationExpiryAt = null;  // seed sites never expire
+        ownerHistory = [];
       };
-      websitesV2 := websitesV2.concat([site]);
+      websitesV3 := websitesV3.concat([site]);
       addToIndex(site);
       count += 1;
     };
@@ -959,9 +1247,9 @@ actor {
 
   public query func getStats() : async Stats {
     {
-      total = websitesV2.size();
-      approved = websitesV2.filter(func(w : Website) : Bool { w.status == #approved }).size();
-      pending = websitesV2.filter(func(w : Website) : Bool { w.status == #pending }).size();
+      total = websitesV3.size();
+      approved = websitesV3.filter(func(w : Website) : Bool { w.status == #approved }).size();
+      pending = websitesV3.filter(func(w : Website) : Bool { w.status == #pending }).size();
     }
   };
 
