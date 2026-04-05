@@ -68,7 +68,33 @@ actor {
     lastCrawledAt : ?Int;
   };
 
-  // ─── Current Website type (V3) ────────────────────────────────────────────
+  // ─── Legacy type (V3) - used for stable var migration ───────────────────
+  type WebsiteV3Legacy = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    ownershipStatus : OwnershipStatus;
+    verificationStatus : VerificationStatus;
+    lastVerifiedAt : ?Int;
+    verificationExpiryAt : ?Int;
+    ownerHistory : [Text];
+  };
+
+  // ─── Current Website type (V4) ────────────────────────────────────────────
   public type Website = {
     id : Nat;
     url : Text;
@@ -96,6 +122,8 @@ actor {
     lastVerifiedAt : ?Int;
     verificationExpiryAt : ?Int;
     ownerHistory : [Text];
+    // Ranking boost set by admin
+    adminBoost : Nat;
   };
 
   public type PageStatus = { #pending; #indexed; #error };
@@ -189,8 +217,11 @@ actor {
   // V2 stable var — intermediate migration storage
   var websitesV2 : [WebsiteV2] = [];
 
-  // V3 stable var — live array used by all runtime logic
-  var websitesV3 : [Website] = [];
+  // V3 stable var — legacy (migration only)
+  var websitesV3 : [WebsiteV3Legacy] = [];
+
+  // V4 stable var — live array used by all runtime logic
+  var websitesV4 : [Website] = [];
 
   var indexTerms : [(Text, [Nat])] = [];
 
@@ -215,6 +246,9 @@ actor {
 
   var userProfiles : [(Principal, UserProfile)] = [];
 
+  // Crawler queue: stable list of websiteIds pending crawl
+  var crawlQueue : [Nat] = [];
+
   // ─── Migration helpers ────────────────────────────────────────────────────
 
   func migrateV1toV2(w : WebsiteV1) : WebsiteV2 {
@@ -238,7 +272,7 @@ actor {
     }
   };
 
-  func migrateV2toV3(w : WebsiteV2) : Website {
+  func migrateV2toV3(w : WebsiteV2) : WebsiteV3Legacy {
     {
       id             = w.id;
       url            = w.url;
@@ -265,6 +299,35 @@ actor {
     }
   };
 
+
+  func migrateV3toV4(w : WebsiteV3Legacy) : Website {
+    {
+      id                  = w.id;
+      url                 = w.url;
+      title               = w.title;
+      description         = w.description;
+      keywords            = w.keywords;
+      status              = w.status;
+      ownerId             = w.ownerId;
+      ownerPrincipal      = w.ownerPrincipal;
+      verificationToken   = w.verificationToken;
+      isVerified          = w.isVerified;
+      isSeed              = w.isSeed;
+      submittedAt         = w.submittedAt;
+      approvedAt          = w.approvedAt;
+      indexStatus         = w.indexStatus;
+      sitemapUrl          = w.sitemapUrl;
+      lastCheckedAt       = w.lastCheckedAt;
+      lastCrawledAt       = w.lastCrawledAt;
+      ownershipStatus     = w.ownershipStatus;
+      verificationStatus  = w.verificationStatus;
+      lastVerifiedAt      = w.lastVerifiedAt;
+      verificationExpiryAt = w.verificationExpiryAt;
+      ownerHistory        = w.ownerHistory;
+      adminBoost          = 0;
+    }
+  };
+
   // Run full migration chain on upgrade
   system func postupgrade() {
     // Step 1: V1 -> V2
@@ -277,6 +340,11 @@ actor {
       websitesV3 := websitesV2.map(migrateV2toV3);
       websitesV2 := [];
     };
+    // Step 3: V3 -> V4 (adds adminBoost field)
+    if (websitesV4.size() == 0 and websitesV3.size() > 0) {
+      websitesV4 := websitesV3.map(migrateV3toV4);
+      websitesV3 := [];
+    };
   };
 
   // ─── Auto-expiry helper ───────────────────────────────────────────────────
@@ -284,7 +352,7 @@ actor {
   // Check if a site's verification has expired (used before critical actions)
   func checkAndExpireSite(siteId : Nat) {
     let now = Time.now();
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == siteId and not w.isSeed) {
         switch (w.verificationExpiryAt) {
           case (?expiry) {
@@ -641,59 +709,211 @@ actor {
     };
   };
 
-  // ─── Search (Ownership-Filtered) ──────────────────────────────────────────
+  // ─── Ranking Helpers ─────────────────────────────────────────────────────
+
+  // Integer log base-2 approximation (floor): log2(n+1)
+  // Used for click popularity: approximates log(clicks+1)*10 in integer math
+  func logApprox(n : Nat) : Nat {
+    if (n == 0) return 0;
+    var v = n;
+    var bits : Nat = 0;
+    while (v > 0) { v /= 2; bits += 1 };
+    // log2(n+1) * 10, scaled to approximate natural log * 10
+    // ln(x) ≈ log2(x) / 1.4427 → multiply log2 by ~7 to approximate ln * 10
+    bits * 7
+  };
+
+  // Spam detection: returns true if any single keyword appears 3+ times in combined text
+  func isSpammy(title : Text, description : Text, keywords : [Text]) : Bool {
+    let combined = (title # " " # description).toLower();
+    for (kw in keywords.vals()) {
+      let lkw = kw.toLower();
+      if (lkw.size() > 1 and countOccurrences(combined, lkw) >= 3) {
+        return true;
+      };
+    };
+    false
+  };
+
+  // Get click count for a given URL
+  func getClicks(url : Text) : Nat {
+    for ((u, c) in clickCounts.vals()) {
+      if (u == url) return c;
+    };
+    0
+  };
+
+  // ─── Search (Algorithm-Based Ranking) ─────────────────────────────────────
 
   public query func searchWebsites(searchQuery : Text) : async [Website] {
     let trimmed = searchQuery.trim(#char ' ');
     if (trimmed.size() == 0) { return [] };
     if (trimmed.size() > 200) { return [] };
     if (containsInjection(trimmed)) { return [] };
+
+    let qLower = trimmed.toLower();
     let terms = tokenize(trimmed);
-    let m = getIndexMap();
-    let scoreMap = Map.empty<Nat, Nat>();
-    for (term in terms.vals()) {
-      switch (m.get(term)) {
-        case (null) {};
-        case (?ids) {
-          for (id in ids.vals()) {
-            let current = scoreMap.get(id).get(0);
-            scoreMap.add(id, current + 1);
-          };
-        };
-      };
-    };
-    // Filter: only approved sites that pass ownership check
-    let eligibleSites = websitesV3.filter(func(w : Website) : Bool {
+    let now = Time.now();
+    // 30 days in nanoseconds for freshness boost
+    let thirtyDaysNs : Int = 2_592_000_000_000_000;
+
+    // ── 1. Filter eligible sites (approved + active/verified + not expired) ───
+    let eligibleSites = websitesV4.filter(func(w : Website) : Bool {
       if (w.status != #approved) return false;
-      // Seed sites always shown
-      if (w.isSeed) return true;
-      // Non-seed: must be verified and not expired
+      if (w.isSeed) return true; // seed sites always shown
       switch (w.verificationStatus) {
         case (#verified) {
           switch (w.ownershipStatus) {
-            case (#expired) { false };
-            case (_) { true };
+            case (#expired) false;
+            case (_) true;
           };
         };
-        case (_) { false };
+        case (_) false;
       };
     });
-    let qLower = trimmed.toLower();
+
+    // ── 2. Score each eligible site ───────────────────────────────────────────
+    let scoreMap = Map.empty<Nat, Int>();
+
     for (site in eligibleSites.vals()) {
+      var score : Int = 0;
       let titleLower = site.title.toLower();
-      if (titleLower.contains(#text qLower)) {
-        let current = scoreMap.get(site.id).get(0);
-        scoreMap.add(site.id, current + 5);
+      let descLower  = site.description.toLower();
+      let urlLower   = site.url.toLower();
+
+      // ── Title scoring ──────────────────────────────────────────────────────
+      if (titleLower == qLower) {
+        score += 50; // exact title match
+      } else if (titleLower.contains(#text qLower)) {
+        score += 30; // partial title match (full query in title)
+      } else {
+        // Check if any individual term matches the title
+        var titleTermMatch = false;
+        for (term in terms.vals()) {
+          if (titleLower.contains(#text term)) { titleTermMatch := true };
+        };
+        if (titleTermMatch) { score += 15 };
+      };
+
+      // ── Description scoring ────────────────────────────────────────────────
+      var descMatch = false;
+      if (descLower.contains(#text qLower)) {
+        descMatch := true;
+      } else {
+        for (term in terms.vals()) {
+          if (descLower.contains(#text term)) { descMatch := true };
+        };
+      };
+      if (descMatch) { score += 20 };
+
+      // ── URL keyword scoring ────────────────────────────────────────────────
+      var urlMatch = false;
+      if (urlLower.contains(#text qLower)) {
+        urlMatch := true;
+      } else {
+        for (term in terms.vals()) {
+          if (urlLower.contains(#text term)) { urlMatch := true };
+        };
+      };
+      if (urlMatch) { score += 25 };
+
+      // ── Keywords field scoring ─────────────────────────────────────────────
+      var kwMatch = false;
+      for (kw in site.keywords.vals()) {
+        let kwLower = kw.toLower();
+        if (kwLower.contains(#text qLower) or qLower.contains(#text kwLower)) {
+          kwMatch := true;
+        } else {
+          for (term in terms.vals()) {
+            if (kwLower.contains(#text term)) { kwMatch := true };
+          };
+        };
+      };
+      if (kwMatch) { score += 15 };
+
+      // ── Freshness boost (+10 if approved within last 30 days) ─────────────
+      switch (site.approvedAt) {
+        case (?approvedAt) {
+          if (now - approvedAt < thirtyDaysNs) { score += 10 };
+        };
+        case (null) {};
+      };
+
+      // ── Click popularity: score += log(clicks + 1) * 10 ──────────────────
+      let clicks = getClicks(site.url);
+      score += logApprox(clicks);
+
+      // ── Trust factors ──────────────────────────────────────────────────────
+      if (site.isVerified) { score += 20 };
+      switch (site.ownershipStatus) {
+        case (#active) { score += 10 };
+        case (_) {};
+      };
+
+      // ── Spam penalty (-30 if keyword stuffing detected) ───────────────────
+      if (isSpammy(site.title, site.description, site.keywords)) {
+        score -= 30;
+      };
+
+      // ── Admin boost ────────────────────────────────────────────────────────
+      score += site.adminBoost;
+
+      // Only include sites with a positive relevance signal
+      if (score > 0) {
+        scoreMap.add(site.id, score);
       };
     };
-    let scored = eligibleSites.map(func(w) : (Website, Nat) {
-      (w, scoreMap.get(w.id).get(0))
+
+    // ── 3-5. Collect, deduplicate by domain, and sort ─────────────────────────
+    // Use mutable arrays for deduplication to avoid tuple-lambda inference issues
+    var dedupDomains : [var Text] = [var];
+    var dedupSitesArr : [var Website] = [var];
+    var dedupScoresArr : [var Int] = [var];
+    var dedupCount : Nat = 0;
+
+    for (site in eligibleSites.vals()) {
+      switch (scoreMap.get(site.id)) {
+        case (null) {};
+        case (?siteScore) {
+          let domain = extractDomain(site.url);
+          var found = false;
+          var foundIdx = 0;
+          var i = 0;
+          while (i < dedupCount) {
+            if (dedupDomains[i] == domain) { found := true; foundIdx := i };
+            i += 1;
+          };
+          if (not found) {
+            // Grow arrays by one slot
+            let newDomains  = Array.tabulate(dedupCount + 1, func(j : Nat) : Text    { if (j < dedupCount) dedupDomains[j]   else domain });
+            let newSites    = Array.tabulate(dedupCount + 1, func(j : Nat) : Website { if (j < dedupCount) dedupSitesArr[j]  else site });
+            let newScores   = Array.tabulate(dedupCount + 1, func(j : Nat) : Int     { if (j < dedupCount) dedupScoresArr[j] else siteScore });
+            dedupDomains    := newDomains.toVarArray();
+            dedupSitesArr   := newSites.toVarArray();
+            dedupScoresArr  := newScores.toVarArray();
+            dedupCount += 1;
+          } else {
+            if (siteScore > dedupScoresArr[foundIdx]) {
+              dedupSitesArr[foundIdx]  := site;
+              dedupScoresArr[foundIdx] := siteScore;
+            };
+          };
+        };
+      };
+    };
+
+    // Build immutable arrays from mutable
+    let finalSites  : [Website] = Array.tabulate(dedupCount, func(i : Nat) : Website { dedupSitesArr[i] });
+    let finalScores : [Int]     = Array.tabulate(dedupCount, func(i : Nat) : Int     { dedupScoresArr[i] });
+
+    // Sort by score descending using index array
+    var idxArr : [Nat] = Array.tabulate(dedupCount, func(i : Nat) : Nat { i });
+    let sortedIdx = idxArr.sort(func(a : Nat, b : Nat) : { #less; #equal; #greater } {
+      if (finalScores[a] > finalScores[b]) #less
+      else if (finalScores[a] < finalScores[b]) #greater
+      else #equal
     });
-    let filtered = scored.filter(func(entry) : Bool { entry.1 > 0 });
-    let sorted = filtered.sort(func(a : (Website, Nat), b : (Website, Nat)) : { #less; #equal; #greater } {
-      if (a.1 > b.1) #less else if (a.1 < b.1) #greater else #equal
-    });
-    sorted.map(func(entry) : Website { entry.0 })
+    sortedIdx.map(func(idx : Nat) : Website { finalSites[idx] })
   };
 
   // ─── Website Submission (Ownership-Aware) ─────────────────────────────────
@@ -725,7 +945,7 @@ actor {
     let domain = extractDomain(url);
 
     // Ownership-aware duplicate domain check
-    for (site in websitesV3.vals()) {
+    for (site in websitesV4.vals()) {
       if (extractDomain(site.url) == domain and site.status != #rejected) {
         let isActiveAndVerified = switch (site.ownershipStatus) {
           case (#active) {
@@ -785,14 +1005,15 @@ actor {
       lastVerifiedAt = null;
       verificationExpiryAt = null;
       ownerHistory = [];
+      adminBoost = 0;
     };
-    websitesV3 := websitesV3.concat([site]);
+    websitesV4 := websitesV4.concat([site]);
     site
   };
 
   public query ({ caller }) func getMyWebsites() : async [Website] {
     requireRegistered(caller);
-    websitesV3.filter(func(w : Website) : Bool {
+    websitesV4.filter(func(w : Website) : Bool {
       switch (w.ownerPrincipal) {
         case (?p) { p == caller };
         case (null) { false };
@@ -803,7 +1024,7 @@ actor {
   // Email-based website lookup (V3 primary method)
   public query ({ caller }) func getMyWebsitesByEmail(email : Text) : async [Website] {
     requireRegistered(caller);
-    websitesV3.filter(func(w : Website) : Bool { w.ownerId == email })
+    websitesV4.filter(func(w : Website) : Bool { w.ownerId == email })
   };
 
   // ─── Domain Verification ──────────────────────────────────────────────────
@@ -811,7 +1032,7 @@ actor {
   public query ({ caller }) func getVerificationToken(websiteId : Nat) : async Text {
     requireRegistered(caller);
     checkAndExpireSite(websiteId);
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -837,7 +1058,7 @@ actor {
     requireRegistered(caller);
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -855,7 +1076,7 @@ actor {
           let verified = body.contains(#text token);
           if (verified) {
             let now = Time.now();
-            websitesV3 := websitesV3.map(func(w : Website) : Website {
+            websitesV4 := websitesV4.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with
                   isVerified = true;
@@ -885,7 +1106,7 @@ actor {
       Runtime.trap("Invalid email");
     };
 
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         // Only allow reclaim if ownership/verification is expired
@@ -901,10 +1122,10 @@ actor {
         if (not canReclaim) {
           Runtime.trap("Cannot reclaim: domain is actively owned and verified.");
         };
-        let now = Time.now();
+        let _now = Time.now();
         let newHistory = site.ownerHistory.concat([site.ownerId]);
         var updatedSite : ?Website = null;
-        websitesV3 := websitesV3.map(func(w : Website) : Website {
+        websitesV4 := websitesV4.map(func(w : Website) : Website {
           if (w.id == websiteId) {
             let updated = { w with
               ownerId        = newOwnerEmail;
@@ -937,7 +1158,7 @@ actor {
     requireAdmin(caller);
     let now = Time.now();
     var count = 0;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.isSeed) {
         // Seed sites bypass expiry system
         w
@@ -968,7 +1189,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -998,7 +1219,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with sitemapUrl = ?sitemapUrl };
         updatedSite := ?updated;
@@ -1018,7 +1239,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1054,13 +1275,18 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with indexStatus = #pending; lastCheckedAt = ?now };
         updatedSite := ?updated;
         updated
       } else w
     });
+    // Add websiteId to crawlQueue if not already queued
+    if (not crawlQueue.any(func(id : Nat) : Bool { id == websiteId })) {
+      crawlQueue := crawlQueue.concat([websiteId]);
+    };
+
     switch (updatedSite) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) { site };
@@ -1069,7 +1295,7 @@ actor {
 
   public query ({ caller }) func getPagesForWebsite(websiteId : Nat) : async [Page] {
     requireRegistered(caller);
-    switch (websitesV3.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1095,7 +1321,7 @@ actor {
 
   public shared ({ caller }) func updateLastCrawledAt(websiteId : Nat) : async () {
     requireAdmin(caller);
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) { { w with lastCrawledAt = ?Time.now() } } else w
     });
   };
@@ -1106,7 +1332,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var approvedSite : ?Website = null;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with
           status = #approved;
@@ -1127,7 +1353,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var rejectedSite : ?Website = null;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #rejected };
         rejectedSite := ?updated;
@@ -1154,7 +1380,7 @@ actor {
     validateDescription(description, callerText);
     validateKeywords(keywords, callerText);
     var editedSite : ?Website = null;
-    websitesV3 := websitesV3.map(func(w : Website) : Website {
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with title; description; keywords };
         editedSite := ?updated;
@@ -1176,18 +1402,38 @@ actor {
   public shared ({ caller }) func deleteWebsite(websiteId : Nat) : async () {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
-    websitesV3 := websitesV3.filter(func(w : Website) : Bool { w.id != websiteId });
+    websitesV4 := websitesV4.filter(func(w : Website) : Bool { w.id != websiteId });
     removeFromIndex(websiteId);
+  };
+
+  public shared ({ caller }) func setAdminBoost(websiteId : Nat, boost : Nat) : async Website {
+    requireAdmin(caller);
+    if (boost > 500) { Runtime.trap("Admin boost cannot exceed 500") };
+    var updatedSite : ?Website = null;
+    websitesV4 := websitesV4.map(func(w : Website) : Website {
+      if (w.id == websiteId) {
+        let updated = { w with adminBoost = boost };
+        updatedSite := ?updated;
+        updated
+      } else w
+    });
+    switch (updatedSite) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) {
+        addLog("ADMIN_BOOST_SET", caller.toText(), "Website " # websiteId.toText() # " boost set to " # boost.toText());
+        site
+      };
+    }
   };
 
   public query ({ caller }) func getAllWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV3
+    websitesV4
   };
 
   public query ({ caller }) func getPendingWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV3.filter(func(w : Website) : Bool { w.status == #pending })
+    websitesV4.filter(func(w : Website) : Bool { w.status == #pending })
   };
 
   // ─── Admin: Seed Data Import ──────────────────────────────────────────────
@@ -1223,8 +1469,9 @@ actor {
         lastVerifiedAt = ?now;
         verificationExpiryAt = null;  // seed sites never expire
         ownerHistory = [];
+        adminBoost = 0;
       };
-      websitesV3 := websitesV3.concat([site]);
+      websitesV4 := websitesV4.concat([site]);
       addToIndex(site);
       count += 1;
     };
@@ -1247,9 +1494,9 @@ actor {
 
   public query func getStats() : async Stats {
     {
-      total = websitesV3.size();
-      approved = websitesV3.filter(func(w : Website) : Bool { w.status == #approved }).size();
-      pending = websitesV3.filter(func(w : Website) : Bool { w.status == #pending }).size();
+      total = websitesV4.size();
+      approved = websitesV4.filter(func(w : Website) : Bool { w.status == #approved }).size();
+      pending = websitesV4.filter(func(w : Website) : Bool { w.status == #pending }).size();
     }
   };
 
@@ -1621,6 +1868,303 @@ actor {
       } else { p };
     });
     #ok(());
+  };
+
+  // ─── Crawler Helpers ─────────────────────────────────────────────────────
+
+  // Extract text between two tags, e.g. <title>...</title>
+  func extractBetween(html : Text, openTag : Text, closeTag : Text) : ?Text {
+    let lower = html.toLower();
+    let openLower = openTag.toLower();
+    let closeLower = closeTag.toLower();
+    if (not lower.contains(#text openLower)) return null;
+    // Find start position by splitting
+    let afterOpen = lower.split(#text openLower);
+    ignore afterOpen.next(); // skip before openTag
+    switch (afterOpen.next()) {
+      case (null) { null };
+      case (?rest) {
+        // Extract same slice from original html (preserve case)
+        let openIdx = html.size() - rest.size();
+        ignore openIdx;
+        // Use rest as slice of html at same offset
+        let htmlRest = html.split(#text openTag);
+        ignore htmlRest.next();
+        switch (htmlRest.next()) {
+          case (null) { null };
+          case (?segment) {
+            let parts = segment.split(#text closeTag);
+            switch (parts.next()) {
+              case (null) { null };
+              case (?value) {
+                let trimmed = value.trim(#char ' ').trim(#char '\n').trim(#char '\r').trim(#char '\t');
+                if (trimmed.size() == 0) { null } else { ?trimmed }
+              };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // Extract <title>...</title> from HTML
+  func extractHtmlTitle(html : Text) : ?Text {
+    extractBetween(html, "<title>", "</title>")
+  };
+
+  // Extract meta description content value from HTML
+  // Handles both name="description" and name='description' variants
+  func extractMetaDesc(html : Text) : ?Text {
+    let lower = html.toLower();
+    // Find the segment after name="description" or name='description'
+    let afterNameDesc : ?Text = if (lower.contains(#text "name=\"description\"")) {
+      let sp = lower.split(#text "name=\"description\"");
+      ignore sp.next();
+      sp.next()
+    } else if (lower.contains(#text "name='description'")) {
+      let sp = lower.split(#text "name='description'");
+      ignore sp.next();
+      sp.next()
+    } else {
+      null
+    };
+    switch (afterNameDesc) {
+      case (null) { null };
+      case (?seg) {
+        if (seg.contains(#text "content=\"")) {
+          let afterContent = seg.split(#text "content=\"");
+          ignore afterContent.next();
+          switch (afterContent.next()) {
+            case (null) { null };
+            case (?valueAndRest) {
+              let valueParts = valueAndRest.split(#text "\"");
+              switch (valueParts.next()) {
+                case (null) { null };
+                case (?val) {
+                  let trimmed = val.trim(#char ' ');
+                  if (trimmed.size() == 0) { null } else { ?trimmed }
+                };
+              }
+            };
+          }
+        } else if (seg.contains(#text "content='")) {
+          let afterContent = seg.split(#text "content='");
+          ignore afterContent.next();
+          switch (afterContent.next()) {
+            case (null) { null };
+            case (?valueAndRest) {
+              let valueParts = valueAndRest.split(#text "'");
+              switch (valueParts.next()) {
+                case (null) { null };
+                case (?val) {
+                  let trimmed = val.trim(#char ' ');
+                  if (trimmed.size() == 0) { null } else { ?trimmed }
+                };
+              }
+            };
+          }
+        } else { null }
+      };
+    }
+  };
+
+    // Extract same-domain href links from HTML
+  func extractSameDomainLinks(html : Text, baseDomain : Text) : [Text] {
+    var links : [Text] = [];
+    let lower = html.toLower();
+    // Split on href=" to find link values
+    let parts = lower.split(#text "href=\"");
+    ignore parts.next(); // skip before first href
+    label linkLoop for (segment in parts) {
+      let closingParts = segment.split(#text "\"");
+      switch (closingParts.next()) {
+        case (null) {};
+        case (?href) {
+          let trimmed = href.trim(#char ' ');
+          // Only include same-domain links (contain the baseDomain)
+          if (trimmed.startsWith(#text "http://") or trimmed.startsWith(#text "https://")) {
+            if (trimmed.contains(#text baseDomain)) {
+              // Avoid duplicates
+              if (not links.any(func(l : Text) : Bool { l == trimmed })) {
+                if (links.size() < 50) { // cap at 50 links per page
+                  links := links.concat([trimmed]);
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+    links
+  };
+
+  // Extract <loc>...</loc> URLs from sitemap XML
+  func extractSitemapUrls(xml : Text) : [Text] {
+    var urls : [Text] = [];
+    let parts = xml.split(#text "<loc>");
+    ignore parts.next(); // skip before first <loc>
+    for (segment in parts) {
+      let closingParts = segment.split(#text "</loc>");
+      switch (closingParts.next()) {
+        case (null) {};
+        case (?url) {
+          let trimmed = url.trim(#char ' ').trim(#char '\n').trim(#char '\r');
+          if (trimmed.size() > 0 and trimmed.size() <= 500
+              and (trimmed.startsWith(#text "http://") or trimmed.startsWith(#text "https://"))) {
+            if (not urls.any(func(u : Text) : Bool { u == trimmed })) {
+              if (urls.size() < 200) { // cap at 200 sitemap URLs
+                urls := urls.concat([trimmed]);
+              };
+            };
+          };
+        };
+      };
+    };
+    urls
+  };
+
+  // Helper: upsert a page record
+  func upsertPage(websiteId : Nat, url : Text, status : PageStatus) {
+    var found = false;
+    pages := pages.map(func(p : Page) : Page {
+      if (p.websiteId == websiteId and p.url == url) {
+        found := true;
+        { p with status }
+      } else p
+    });
+    if (not found) {
+      let newPage : Page = {
+        id = nextPageId;
+        websiteId;
+        url;
+        status;
+        addedAt = Time.now();
+      };
+      nextPageId += 1;
+      pages := pages.concat([newPage]);
+    };
+  };
+
+  // ─── Admin: Crawler Queue & Runner ────────────────────────────────────────
+
+  public query ({ caller }) func getCrawlQueue() : async [Nat] {
+    requireAdmin(caller);
+    crawlQueue
+  };
+
+  // Admin can manually add a websiteId to the crawl queue
+  public shared ({ caller }) func addToCrawlQueue(websiteId : Nat) : async () {
+    requireAdmin(caller);
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?_) {};
+    };
+    if (not crawlQueue.any(func(id : Nat) : Bool { id == websiteId })) {
+      crawlQueue := crawlQueue.concat([websiteId]);
+    };
+  };
+
+  // Main crawler function — admin-only, processes the crawl queue
+  // Fetches each queued website, extracts title/description/links, updates index
+  public shared ({ caller }) func runCrawler() : async Nat {
+    requireAdmin(caller);
+
+    let queueSnapshot = crawlQueue;
+    var processedCount : Nat = 0;
+    var remainingQueue : [Nat] = [];
+
+    for (websiteId in queueSnapshot.vals()) {
+      // Find website
+      switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+        case (null) {
+          // Website deleted — drop from queue silently
+        };
+        case (?site) {
+          let now = Time.now();
+          try {
+            // ── 1. Fetch homepage ───────────────────────────────────────────
+            let html = await Outcall.httpGetRequest(site.url, [], transform);
+
+            // ── 2. Extract title & description ─────────────────────────────
+            let extractedTitle = switch (extractHtmlTitle(html)) {
+              case (?t) { if (t.size() > 0 and t.size() <= 200) { t } else { site.title } };
+              case (null) { site.title };
+            };
+            let extractedDesc = switch (extractMetaDesc(html)) {
+              case (?d) { if (d.size() > 0 and d.size() <= 2000) { d } else { site.description } };
+              case (null) { site.description };
+            };
+
+            // ── 3. Extract same-domain links ────────────────────────────────
+            let baseDomain = extractDomain(site.url);
+            let links = extractSameDomainLinks(html, baseDomain);
+
+            // Store homepage page as indexed
+            upsertPage(websiteId, site.url, #indexed);
+
+            // Store extracted links as pending pages
+            for (link in links.vals()) {
+              upsertPage(websiteId, link, #pending);
+            };
+
+            // ── 4. Sitemap support ──────────────────────────────────────────
+            switch (site.sitemapUrl) {
+              case (null) {};
+              case (?sitemapUrl) {
+                try {
+                  let sitemapXml = await Outcall.httpGetRequest(sitemapUrl, [], transform);
+                  let sitemapUrls = extractSitemapUrls(sitemapXml);
+                  for (url in sitemapUrls.vals()) {
+                    upsertPage(websiteId, url, #pending);
+                  };
+                } catch (_) {
+                  // Sitemap fetch failed — not critical, continue
+                };
+              };
+            };
+
+            // ── 5. Update website record ────────────────────────────────────
+            websitesV4 := websitesV4.map(func(w : Website) : Website {
+              if (w.id == websiteId) {
+                { w with
+                  title = extractedTitle;
+                  description = extractedDesc;
+                  indexStatus = #indexed;
+                  lastCrawledAt = ?now;
+                }
+              } else w
+            });
+
+            // Re-index with updated title/description
+            removeFromIndex(websiteId);
+            switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+              case (?updated) { addToIndex(updated) };
+              case (null) {};
+            };
+
+            processedCount += 1;
+            // Successfully processed — do NOT add back to remainingQueue
+
+          } catch (_) {
+            // ── Fetch failed: mark as error, keep in queue for retry ────────
+            websitesV4 := websitesV4.map(func(w : Website) : Website {
+              if (w.id == websiteId) {
+                { w with indexStatus = #error; lastCrawledAt = ?now }
+              } else w
+            });
+            upsertPage(websiteId, site.url, #error);
+            addLog("CRAWLER_ERROR", caller.toText(), "Failed to crawl website " # websiteId.toText() # ": " # site.url);
+            remainingQueue := remainingQueue.concat([websiteId]);
+          };
+        };
+      };
+    };
+
+    // Clean queue: only keep sites that failed (for retry)
+    crawlQueue := remainingQueue;
+    addLog("CRAWLER_RUN", caller.toText(),
+      "Crawled " # processedCount.toText() # " sites. " # remainingQueue.size().toText() # " failed (queued for retry).");
+    processedCount
   };
 
   public query func getAdsEnabled() : async Bool { adsEnabled };

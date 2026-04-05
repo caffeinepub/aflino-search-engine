@@ -81,6 +81,7 @@ import {
   useGetAllCampaigns,
   useGetAllWebsites,
   useGetBlacklist,
+  useGetCrawlQueue,
   useGetFlaggedDomains,
   useGetSecurityLogs,
   useGetStats,
@@ -91,7 +92,9 @@ import {
   useRemoveFromBlacklist,
   useResumeCampaign,
   useReviewFlaggedDomain,
+  useRunCrawler,
   useRunOwnershipCleanup,
+  useSetAdminBoost,
   useSetAdsEnabled,
 } from "../hooks/useQueries";
 import {
@@ -512,6 +515,25 @@ function WebsitesSection() {
   const deleteMutation = useDeleteWebsite();
   const importMutation = useImportSeedData();
   const cleanupMutation = useRunOwnershipCleanup();
+  const crawlerMutation = useRunCrawler();
+  const { data: crawlQueue = [] } = useGetCrawlQueue();
+
+  const handleRunCrawler = async () => {
+    if (
+      !confirm(
+        `Run crawler on ${crawlQueue.length} queued site(s)? This will fetch each site via HTTP outcall and update the search index.`,
+      )
+    )
+      return;
+    try {
+      const count = await crawlerMutation.mutateAsync();
+      toast.success(
+        `Crawler complete. ${count.toString()} site(s) successfully indexed.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Crawler failed");
+    }
+  };
 
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected"
@@ -585,20 +607,21 @@ function WebsitesSection() {
     }
   };
 
-  const handleBoost = (id: bigint) => {
-    const score = prompt("Enter boost score (1-100):");
-    if (!score) return;
+  const setBoostMutation = useSetAdminBoost();
+  const handleBoost = async (id: bigint) => {
+    const score = prompt("Enter admin boost (0-500):");
+    if (score === null) return;
     const n = Number.parseInt(score, 10);
-    if (Number.isNaN(n) || n < 1 || n > 100) {
-      toast.error("Enter a number 1-100");
+    if (Number.isNaN(n) || n < 0 || n > 500) {
+      toast.error("Enter a number 0-500");
       return;
     }
-    const map: Record<string, number> = JSON.parse(
-      localStorage.getItem("aflino_boost_map") ?? "{}",
-    );
-    map[id.toString()] = n;
-    localStorage.setItem("aflino_boost_map", JSON.stringify(map));
-    toast.success(`Boost score set to ${n}`);
+    try {
+      await setBoostMutation.mutateAsync({ id, boost: BigInt(n) });
+      toast.success(`Admin boost set to ${n}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to set boost");
+    }
   };
 
   const handleSeedImport = async () => {
@@ -649,29 +672,53 @@ function WebsitesSection() {
             automatically blocked by the backend.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleOwnershipCleanup()}
-            disabled={cleanupMutation.isPending}
-            className="gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50"
-            data-ocid="websites.cleanup.button"
-          >
-            {cleanupMutation.isPending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Running…
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-3.5 w-3.5" />
-                Run Ownership Cleanup
-              </>
-            )}
-          </Button>
-          <p className="text-xs text-muted-foreground max-w-[220px] text-right">
-            Marks sites with expired verification (&gt;90 days) as expired.
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleRunCrawler()}
+              disabled={crawlerMutation.isPending || crawlQueue.length === 0}
+              className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50"
+              data-ocid="websites.crawler.button"
+            >
+              {crawlerMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Crawling…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Run Crawler
+                  {crawlQueue.length > 0 ? ` (${crawlQueue.length})` : ""}
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleOwnershipCleanup()}
+              disabled={cleanupMutation.isPending}
+              className="gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50"
+              data-ocid="websites.cleanup.button"
+            >
+              {cleanupMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Running…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Run Ownership Cleanup
+                </>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground max-w-[260px] text-right">
+            Crawler fetches queued sites &amp; updates the index. Cleanup marks
+            expired sites.
           </p>
         </div>
       </div>
@@ -808,9 +855,9 @@ function WebsitesSection() {
                       </button>
                       <button
                         type="button"
-                        title="Boost ranking"
-                        onClick={() => handleBoost(site.id)}
-                        className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-100 transition-colors"
+                        title={`Admin Boost: ${Number(site.adminBoost ?? 0)} (click to change)`}
+                        onClick={() => void handleBoost(site.id)}
+                        className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors ${Number(site.adminBoost ?? 0) > 0 ? "text-amber-600 bg-amber-50 hover:bg-amber-100" : "text-muted-foreground hover:text-amber-600 hover:bg-amber-100"}`}
                         data-ocid={`websites.boost.button.${i + 1}`}
                       >
                         <Rocket className="h-3.5 w-3.5" />
@@ -2215,6 +2262,7 @@ function AnalyticsSection() {
 
 function SearchControlSection() {
   const { data: allWebsites = [] } = useGetAllWebsites();
+  const setBoostMutation = useSetAdminBoost();
 
   const [boostMap, setBoostMap] = useState<Record<string, number>>(() => {
     try {
@@ -2265,20 +2313,28 @@ function SearchControlSection() {
     localStorage.setItem("aflino_removed_sites", JSON.stringify(ids));
   };
 
-  const addBoost = () => {
+  const addBoost = async () => {
     const n = Number.parseInt(boostScore, 10);
     if (!boostId.trim()) {
       toast.error("Website ID required");
       return;
     }
-    if (Number.isNaN(n) || n < 1 || n > 100) {
-      toast.error("Score must be 1-100");
+    if (Number.isNaN(n) || n < 0 || n > 500) {
+      toast.error("Score must be 0-500");
       return;
     }
-    saveBoostMap({ ...boostMap, [boostId.trim()]: n });
-    setBoostId("");
-    setBoostScore("");
-    toast.success("Boost added");
+    try {
+      await setBoostMutation.mutateAsync({
+        id: BigInt(boostId.trim()),
+        boost: BigInt(n),
+      });
+      saveBoostMap({ ...boostMap, [boostId.trim()]: n });
+      setBoostId("");
+      setBoostScore("");
+      toast.success(`Admin boost set to ${n}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to set boost");
+    }
   };
 
   const removeBoost = (id: string) => {

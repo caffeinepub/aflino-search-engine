@@ -59,6 +59,7 @@ export interface Website {
     lastVerifiedAt?: bigint;
     verificationExpiryAt?: bigint;
     ownerHistory: Array<string>;
+    adminBoost: bigint;
 }
 export interface http_header {
     value: string;
@@ -199,6 +200,7 @@ export interface backendInterface {
     runOwnershipCleanup(): Promise<bigint>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     searchWebsites(searchQuery: string): Promise<Array<Website>>;
+    setAdminBoost(websiteId: bigint, boost: bigint): Promise<Website>;
     setAdsEnabled(enabled: boolean): Promise<void>;
     submitWebsite(ownerId: string, url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
     transform(input: TransformationInput): Promise<TransformationOutput>;

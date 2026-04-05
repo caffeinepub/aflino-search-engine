@@ -38,6 +38,7 @@ declare module "./backend" {
       keywords: string[],
     ): Promise<Website>;
     deleteWebsite(websiteId: bigint): Promise<void>;
+    setAdminBoost(websiteId: bigint, boost: bigint): Promise<Website>;
     getAllWebsites(): Promise<Website[]>;
     getPendingWebsites(): Promise<Website[]>;
     importSeedData(entries: SeedEntry[]): Promise<bigint>;

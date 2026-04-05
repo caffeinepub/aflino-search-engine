@@ -172,6 +172,20 @@ export function useDeleteWebsite() {
   });
 }
 
+export function useSetAdminBoost() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { id: bigint; boost: bigint }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.setAdminBoost(data.id, data.boost);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+    },
+  });
+}
+
 export function useEditWebsite() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -631,6 +645,51 @@ export function useRunOwnershipCleanup() {
       void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
       void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
       void queryClient.invalidateQueries({ queryKey: ["myWebsitesByEmail"] });
+    },
+  });
+}
+
+export function useGetCrawlQueue() {
+  const { actor } = useActor();
+  return useQuery({
+    queryKey: ["crawlQueue"],
+    queryFn: async () => {
+      if (!actor) return [] as bigint[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).getCrawlQueue() as Promise<bigint[]>;
+    },
+    enabled: !!actor,
+  });
+}
+
+export function useRunCrawler() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).runCrawler() as Promise<bigint>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+      void queryClient.invalidateQueries({ queryKey: ["crawlQueue"] });
+      void queryClient.invalidateQueries({ queryKey: ["myWebsites"] });
+    },
+  });
+}
+
+export function useAddToCrawlQueue() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (websiteId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).addToCrawlQueue(websiteId) as Promise<void>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["crawlQueue"] });
     },
   });
 }

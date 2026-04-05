@@ -87,12 +87,23 @@ export interface UserProfile { 'email' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export type IndexStatus = { 'notIndexed' : null } |
+  { 'pending' : null } |
+  { 'indexed' : null } |
+  { 'error' : null };
+export type OwnershipStatus = { 'active' : null } |
+  { 'expired' : null } |
+  { 'reclaimed' : null };
+export type VerificationStatus = { 'pending' : null } |
+  { 'verified' : null } |
+  { 'expired' : null };
 export interface Website {
   'id' : bigint,
   'url' : string,
   'status' : WebsiteStatus,
   'title' : string,
-  'ownerPrincipal' : Principal,
+  'ownerId' : string,
+  'ownerPrincipal' : [] | [Principal],
   'approvedAt' : [] | [bigint],
   'verificationToken' : string,
   'submittedAt' : bigint,
@@ -100,6 +111,16 @@ export interface Website {
   'isSeed' : boolean,
   'keywords' : Array<string>,
   'isVerified' : boolean,
+  'indexStatus' : [] | [IndexStatus],
+  'sitemapUrl' : [] | [string],
+  'lastCheckedAt' : [] | [bigint],
+  'lastCrawledAt' : [] | [bigint],
+  'ownershipStatus' : OwnershipStatus,
+  'verificationStatus' : VerificationStatus,
+  'lastVerifiedAt' : [] | [bigint],
+  'verificationExpiryAt' : [] | [bigint],
+  'ownerHistory' : Array<string>,
+  'adminBoost' : bigint,
 }
 export type WebsiteStatus = { 'pending' : null } |
   { 'approved' : null } |
@@ -157,6 +178,7 @@ export interface _SERVICE {
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'searchWebsites' : ActorMethod<[string], Array<Website>>,
+  'setAdminBoost' : ActorMethod<[bigint, bigint], Website>,
   'setAdsEnabled' : ActorMethod<[boolean], undefined>,
   'submitWebsite' : ActorMethod<
     [string, string, string, Array<string>],
