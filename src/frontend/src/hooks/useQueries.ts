@@ -374,6 +374,17 @@ export function useRecordClick() {
   });
 }
 
+export function useRecordImpression() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (url: string) => {
+      if (!actor) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (actor as any).recordImpression(url);
+    },
+  });
+}
+
 // ── Advertiser / Monetization hooks ───────────────────────────
 
 export function useApplyForAdvertiser() {

@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Bookmark,
   ChevronRight,
   Cloud,
+  ExternalLink,
   Menu,
   Search,
   Share2,
@@ -13,7 +15,9 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import type { Website } from "../backend.d";
 import { useAuth } from "../context/AuthContext";
+import { useActor } from "../hooks/useActor";
 import { useGetCallerRole } from "../hooks/useQueries";
 import { sanitizeText, validateSearchQuery } from "../utils/security";
 
@@ -30,6 +34,12 @@ type WeatherState =
   | { status: "loading" }
   | { status: "success"; data: WeatherData }
   | { status: "error"; message: string };
+
+interface DiscoverFeed {
+  trending: Website[];
+  recentlyIndexed: Website[];
+  popularDomains: Website[];
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -68,6 +78,14 @@ function getWeatherLabel(code: number): string {
   if (code <= 82) return "Showers";
   if (code <= 99) return "Thunderstorm";
   return "Unknown";
+}
+
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 // ── WeatherCard component ─────────────────────────────────────────────────────
@@ -137,7 +155,6 @@ function WeatherCard() {
       className="bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-4"
       data-ocid="discover.weather.card"
     >
-      {/* Card header */}
       <div className="flex items-center gap-2 mb-3">
         <Sun className="h-4 w-4 text-[#006AFF]" />
         <span className="text-sm font-semibold text-[#111827]">Weather</span>
@@ -195,6 +212,92 @@ function WeatherCard() {
   );
 }
 
+// ── WebsiteCard component ─────────────────────────────────────────────────────
+
+function WebsiteCard({ site }: { site: Website }) {
+  return (
+    <button
+      type="button"
+      onClick={() => window.open(site.url, "_blank", "noopener,noreferrer")}
+      className="flex-shrink-0 w-48 bg-white rounded-xl border border-[#E5E7EB] shadow-sm p-3 text-left hover:border-[#006AFF] hover:shadow-md transition-all group"
+      data-ocid="discover.feed.item"
+    >
+      <div className="flex items-start justify-between gap-1 mb-1">
+        <p className="text-sm font-semibold text-[#111827] truncate leading-tight flex-1">
+          {site.title}
+        </p>
+        <ExternalLink className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#006AFF] flex-shrink-0 mt-0.5 transition-colors" />
+      </div>
+      <p className="text-xs text-[#9CA3AF] truncate mb-1.5">
+        {getDomain(site.url)}
+      </p>
+      {site.description && (
+        <p className="text-xs text-[#6B7280] line-clamp-2 leading-relaxed">
+          {site.description}
+        </p>
+      )}
+    </button>
+  );
+}
+
+// ── Skeleton card ─────────────────────────────────────────────────────────────
+
+function WebsiteCardSkeleton() {
+  return (
+    <div className="flex-shrink-0 w-48 bg-white rounded-xl border border-[#E5E7EB] p-3 animate-pulse">
+      <div className="h-3.5 bg-[#F3F4F6] rounded w-3/4 mb-2" />
+      <div className="h-2.5 bg-[#F3F4F6] rounded w-1/2 mb-2" />
+      <div className="h-2 bg-[#F3F4F6] rounded w-full mb-1" />
+      <div className="h-2 bg-[#F3F4F6] rounded w-2/3" />
+    </div>
+  );
+}
+
+// ── DiscoverFeedSection ───────────────────────────────────────────────────────
+
+function DiscoverFeedSection({
+  title,
+  emoji,
+  sites,
+  isLoading,
+  ocid,
+}: {
+  title: string;
+  emoji: string;
+  sites: Website[];
+  isLoading: boolean;
+  ocid: string;
+}) {
+  if (!isLoading && sites.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="w-full mb-6"
+      data-ocid={ocid}
+    >
+      <h3 className="font-semibold text-base text-[#111827] mb-3">
+        {emoji} {title}
+      </h3>
+      <div
+        className="flex gap-3 overflow-x-auto pb-2"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders
+              <WebsiteCardSkeleton key={i} />
+            ))
+          : sites.map((site, i) => (
+              <WebsiteCard key={String(site.id ?? i)} site={site} />
+            ))}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -212,11 +315,11 @@ export default function HomePage() {
     user: authUser,
     logout: authLogout,
   } = useAuth();
+  const { actor, isFetching: actorFetching } = useActor();
 
   const isAdmin = authRole === "admin" || role === "admin";
   const isUserLoggedIn = isLocalAuth && authRole === "user";
 
-  // Admin-configurable logo URLs from localStorage
   const headerLogoUrl =
     typeof localStorage !== "undefined"
       ? localStorage.getItem("aflino_header_logo_url") || ""
@@ -225,6 +328,35 @@ export default function HomePage() {
     typeof localStorage !== "undefined"
       ? localStorage.getItem("aflino_searchbar_icon_url") || ""
       : "";
+
+  // ── Discover Feed ──────────────────────────────────────────────────────────
+  const { data: discoverFeed, isLoading: feedLoading } = useQuery<DiscoverFeed>(
+    {
+      queryKey: ["discoverFeed"],
+      queryFn: async () => {
+        if (!actor)
+          return { trending: [], recentlyIndexed: [], popularDomains: [] };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (await (actor as any).getDiscoverFeed()) as DiscoverFeed;
+        } catch (err) {
+          console.error("[DiscoverFeed] Failed to load:", err);
+          return { trending: [], recentlyIndexed: [], popularDomains: [] };
+        }
+      },
+      enabled: !!actor && !actorFetching,
+      staleTime: 5 * 60 * 1000,
+    },
+  );
+
+  const trending = discoverFeed?.trending ?? [];
+  const recentlyIndexed = discoverFeed?.recentlyIndexed ?? [];
+  const popularDomains = discoverFeed?.popularDomains ?? [];
+  const hasFeedData =
+    trending.length > 0 ||
+    recentlyIndexed.length > 0 ||
+    popularDomains.length > 0;
+  const showFeedSkeletons = feedLoading && !discoverFeed;
 
   // Close profile dropdown on outside click
   useEffect(() => {
@@ -266,7 +398,6 @@ export default function HomePage() {
     void navigate({ to: "/" });
   };
 
-  // Get user initials for avatar
   const userInitial = authUser ? authUser.charAt(0).toUpperCase() : "U";
 
   return (
@@ -276,7 +407,6 @@ export default function HomePage() {
         className="sticky top-0 z-30 flex items-center justify-between px-5 py-3 bg-white border-b border-[#E5E7EB]"
         data-ocid="header.section"
       >
-        {/* Left: Logo */}
         <Link
           to="/"
           className="flex items-center gap-2 no-underline"
@@ -300,9 +430,7 @@ export default function HomePage() {
           </span>
         </Link>
 
-        {/* Right: Profile icon + Hamburger */}
         <div className="flex items-center gap-2">
-          {/* Profile icon — only when user is logged in */}
           {isUserLoggedIn && (
             <div className="relative" ref={profileMenuRef}>
               <button
@@ -321,14 +449,12 @@ export default function HomePage() {
                 )}
               </button>
 
-              {/* Dropdown */}
               {profileMenuOpen && (
                 <div
                   className="absolute right-0 top-10 bg-white rounded-xl border border-[#E5E7EB] shadow-lg w-48 z-50 py-1"
                   role="menu"
                   data-ocid="header.profile.dropdown_menu"
                 >
-                  {/* User email */}
                   {authUser && (
                     <div className="px-4 py-2 border-b border-[#F3F4F6]">
                       <p className="text-xs text-[#9CA3AF] truncate">
@@ -375,7 +501,6 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Hamburger */}
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
@@ -403,7 +528,6 @@ export default function HomePage() {
         }`}
         data-ocid="header.menu.panel"
       >
-        {/* Panel header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
           <span className="font-semibold text-[#111827] text-base">Menu</span>
           <button
@@ -417,9 +541,7 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Panel content */}
         <nav className="flex flex-col gap-2 p-5 flex-1">
-          {/* Not logged in: show Login link */}
           {!isLocalAuth && (
             <Link
               to="/login"
@@ -431,7 +553,6 @@ export default function HomePage() {
             </Link>
           )}
 
-          {/* My Dashboard (for logged-in users) */}
           {isUserLoggedIn && !isAdmin && (
             <Link
               to="/dashboard"
@@ -443,7 +564,6 @@ export default function HomePage() {
             </Link>
           )}
 
-          {/* Admin Panel (for local admin session) */}
           {isAdmin && (
             <Link
               to="/admin"
@@ -455,7 +575,6 @@ export default function HomePage() {
             </Link>
           )}
 
-          {/* Submit Website — primary CTA */}
           <Link
             to="/submit"
             onClick={closeMenu}
@@ -465,10 +584,8 @@ export default function HomePage() {
             Submit Website
           </Link>
 
-          {/* Divider */}
           <div className="border-t border-[#E5E7EB] my-1" />
 
-          {/* Admin Sign Out */}
           {isAdmin && (
             <button
               type="button"
@@ -479,8 +596,6 @@ export default function HomePage() {
               Admin Sign Out
             </button>
           )}
-
-          {/* Internet Identity Sign Out (non-admin ICP users) */}
         </nav>
       </div>
 
@@ -501,7 +616,6 @@ export default function HomePage() {
             }`}
             style={{ height: "52px" }}
           >
-            {/* Left icon */}
             <div className="pl-3 flex-shrink-0">
               {searchBarIconUrl ? (
                 <img
@@ -518,7 +632,6 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* Text input */}
             <input
               ref={inputRef}
               type="text"
@@ -532,7 +645,6 @@ export default function HomePage() {
               data-ocid="home.search.input"
             />
 
-            {/* Circular search button */}
             <button
               type="button"
               onClick={() => handleSearch()}
@@ -549,7 +661,34 @@ export default function HomePage() {
             ✔ Verified Websites Only &bull; 🔒 Safe &amp; Secure Search
           </p>
 
-          {/* ── Discover Section ── */}
+          {/* ── Live Discover Feed (from backend) ── */}
+          {(showFeedSkeletons || hasFeedData) && (
+            <div className="w-full mb-2" data-ocid="discover.feed.section">
+              <DiscoverFeedSection
+                title="Trending"
+                emoji="🔥"
+                sites={trending}
+                isLoading={showFeedSkeletons}
+                ocid="discover.trending.section"
+              />
+              <DiscoverFeedSection
+                title="Recently Indexed"
+                emoji="🆕"
+                sites={recentlyIndexed}
+                isLoading={showFeedSkeletons}
+                ocid="discover.recently_indexed.section"
+              />
+              <DiscoverFeedSection
+                title="Popular Domains"
+                emoji="🌐"
+                sites={popularDomains}
+                isLoading={showFeedSkeletons}
+                ocid="discover.popular_domains.section"
+              />
+            </div>
+          )}
+
+          {/* ── Static Discover Section ── */}
           <div className="w-full">
             <h2 className="font-semibold text-base text-[#111827] mb-4">
               Discover
@@ -559,7 +698,7 @@ export default function HomePage() {
               className="grid grid-cols-1 gap-4 sm:grid-cols-2"
               data-ocid="discover.section"
             >
-              {/* A. Category Card (full width on sm+) */}
+              {/* A. Category Card */}
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -585,7 +724,7 @@ export default function HomePage() {
                 </div>
               </motion.div>
 
-              {/* B. Trending Card */}
+              {/* B. Trending Searches Card */}
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}

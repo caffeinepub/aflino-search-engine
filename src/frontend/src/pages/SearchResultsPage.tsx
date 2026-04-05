@@ -16,6 +16,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
   useRecordClick,
+  useRecordImpression,
   useSearchWebsites,
 } from "../hooks/useQueries";
 
@@ -281,6 +282,7 @@ export default function SearchResultsPage() {
   const { data: ads = [] } = useGetAdsForSearch(q);
   const { data: adsEnabled = false } = useGetAdsEnabled();
   const { mutate: recordClick } = useRecordClick();
+  const { mutate: recordImpression } = useRecordImpression();
   const {
     isAuthenticated: isLocalAuth,
     role: authRole,
@@ -350,6 +352,15 @@ export default function SearchResultsPage() {
   );
 
   const hasResults = !isLoading && results.length > 0;
+
+  // Fire one impression per result when the current page of results is shown
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recordImpression is stable
+  useEffect(() => {
+    if (!pagedResults || pagedResults.length === 0) return;
+    for (const site of pagedResults) {
+      recordImpression(site.url);
+    }
+  }, [pagedResults]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">

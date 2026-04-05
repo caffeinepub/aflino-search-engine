@@ -237,6 +237,7 @@ actor {
   var rateLimitData : [(Text, [Int])] = [];
 
   var clickCounts : [(Text, Nat)] = [];
+  var impressionCounts : [(Text, Nat)] = [];
 
   var advertiserProfiles : [AdvertiserProfile] = [];
   var campaigns : [Campaign] = [];
@@ -752,6 +753,13 @@ actor {
     0
   };
 
+  func getImpressions(url : Text) : Nat {
+    for ((u, c) in impressionCounts.vals()) {
+      if (u == url) return c;
+    };
+    0
+  };
+
   // ─── Search (Algorithm-Based Ranking) ─────────────────────────────────────
 
   public query func searchWebsites(searchQuery : Text) : async [Website] {
@@ -851,6 +859,13 @@ actor {
       // ── Click popularity: score += log(clicks + 1) * 10 ──────────────────
       let clicks = getClicks(site.url);
       score += logApprox(clicks);
+
+      // ── CTR boost: score += (clicks / impressions) * 20 ──────────────────
+      let impressions = getImpressions(site.url);
+      if (impressions > 0) {
+        // Integer math: CTR * 20 = (clicks * 20) / impressions
+        score += (clicks * 20) / impressions;
+      };
 
       // ── Trust factors ──────────────────────────────────────────────────────
       if (site.isVerified) { score += 20 };
@@ -1497,6 +1512,18 @@ actor {
     });
     if (not found) {
       clickCounts := clickCounts.concat([(url, 1)]);
+    };
+  };
+
+  // ─── Impression Tracking ────────────────────────────────────────────────
+
+  public func recordImpression(url : Text) : async () {
+    var found = false;
+    impressionCounts := impressionCounts.map(func(entry) {
+      if (entry.0 == url) { found := true; (entry.0, entry.1 + 1) } else entry
+    });
+    if (not found) {
+      impressionCounts := impressionCounts.concat([(url, 1)]);
     };
   };
 
