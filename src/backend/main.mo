@@ -760,6 +760,34 @@ actor {
     0
   };
 
+  // ─── Query Intent Classification ─────────────────────────────────────────
+
+  type QueryIntent = {
+    #transactional;
+    #informational;
+    #navigational;
+    #general;
+  };
+
+  func classifyIntent(qLower : Text, sites : [Website]) : QueryIntent {
+    // Transactional keywords
+    let transactionalWords : [Text] = ["buy", "price", "cheap", "order", "shop", "deal"];
+    for (w in transactionalWords.vals()) {
+      if (qLower.contains(#text w)) { return #transactional };
+    };
+    // Informational keywords
+    let informationalWords : [Text] = ["how", "what", "why", "when", "where", "guide", "tutorial"];
+    for (w in informationalWords.vals()) {
+      if (qLower.contains(#text w)) { return #informational };
+    };
+    // Navigational: query matches a site title or is contained in a site URL
+    for (site in sites.vals()) {
+      if (site.title.toLower() == qLower) { return #navigational };
+      if (site.url.toLower().contains(#text qLower)) { return #navigational };
+    };
+    #general
+  };
+
   // ─── Search (Algorithm-Based Ranking) ─────────────────────────────────────
 
   public query func searchWebsites(searchQuery : Text) : async [Website] {
@@ -789,7 +817,10 @@ actor {
       };
     });
 
-    // ── 2. Score each eligible site ───────────────────────────────────────────
+    // ── 2. Classify query intent ─────────────────────────────────────────────
+    let intent : QueryIntent = classifyIntent(qLower, eligibleSites);
+
+    // ── 3. Score each eligible site ───────────────────────────────────────────
     let scoreMap = Map.empty<Nat, Int>();
 
     for (site in eligibleSites.vals()) {
@@ -798,13 +829,14 @@ actor {
       let descLower  = site.description.toLower();
       let urlLower   = site.url.toLower();
 
-      // ── Title scoring ──────────────────────────────────────────────────────
+      // ── Title scoring (Navigational: 2x) ─────────────────────────────────
       if (titleLower == qLower) {
-        score += 50; // exact title match
+        let base = 50;
+        score += (if (intent == #navigational) base * 2 else base);
       } else if (titleLower.contains(#text qLower)) {
-        score += 30; // partial title match (full query in title)
+        let base = 30;
+        score += (if (intent == #navigational) base * 2 else base);
       } else {
-        // Check if any individual term matches the title
         var titleTermMatch = false;
         for (term in terms.vals()) {
           if (titleLower.contains(#text term)) { titleTermMatch := true };
@@ -812,7 +844,7 @@ actor {
         if (titleTermMatch) { score += 15 };
       };
 
-      // ── Description scoring ────────────────────────────────────────────────
+      // ── Description scoring (Informational: 2x) ───────────────────────────
       var descMatch = false;
       if (descLower.contains(#text qLower)) {
         descMatch := true;
@@ -821,9 +853,12 @@ actor {
           if (descLower.contains(#text term)) { descMatch := true };
         };
       };
-      if (descMatch) { score += 20 };
+      if (descMatch) {
+        let base = 20;
+        score += (if (intent == #informational) base * 2 else base);
+      };
 
-      // ── URL keyword scoring ────────────────────────────────────────────────
+      // ── URL keyword scoring (Transactional: 2x, Navigational: 2x) ─────────
       var urlMatch = false;
       if (urlLower.contains(#text qLower)) {
         urlMatch := true;
@@ -832,9 +867,12 @@ actor {
           if (urlLower.contains(#text term)) { urlMatch := true };
         };
       };
-      if (urlMatch) { score += 25 };
+      if (urlMatch) {
+        let base = 25;
+        score += (if (intent == #transactional or intent == #navigational) base * 2 else base);
+      };
 
-      // ── Keywords field scoring ─────────────────────────────────────────────
+      // ── Keywords field scoring (Transactional: 2x) ────────────────────────
       var kwMatch = false;
       for (kw in site.keywords.vals()) {
         let kwLower = kw.toLower();
@@ -846,7 +884,10 @@ actor {
           };
         };
       };
-      if (kwMatch) { score += 15 };
+      if (kwMatch) {
+        let base = 15;
+        score += (if (intent == #transactional) base * 2 else base);
+      };
 
       // ── Freshness boost (+10 if approved within last 30 days) ─────────────
       switch (site.approvedAt) {
@@ -888,7 +929,7 @@ actor {
       };
     };
 
-    // ── 3-5. Collect, deduplicate by domain, and sort ─────────────────────────
+    // ── 4-6. Collect, deduplicate by domain, and sort ─────────────────────────
     // Use mutable arrays for deduplication to avoid tuple-lambda inference issues
     var dedupDomains : [var Text] = [var];
     var dedupSitesArr : [var Website] = [var];

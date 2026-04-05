@@ -11,13 +11,14 @@ import type {
 } from "../backend.d";
 import { useActor } from "./useActor";
 
-export function useSearchWebsites(query: string) {
+export function useSearchWebsites(query: string, email?: string | null) {
   const { actor, isFetching } = useActor();
   return useQuery<Website[]>({
-    queryKey: ["search", query],
+    queryKey: ["search", query, email ?? "guest"],
     queryFn: async () => {
       if (!actor || !query.trim()) return [];
-      return actor.searchWebsites(query) as unknown as Website[];
+      const emailOpt: [string] | [] = email ? [email] : [];
+      return actor.searchWebsites(query, emailOpt) as unknown as Website[];
     },
     enabled: !!actor && !isFetching && !!query.trim(),
   });
@@ -717,5 +718,51 @@ export function useCheckAndQueueRecrawl() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["crawlQueue"] });
     },
+  });
+}
+
+// ── User Behavior hooks ────────────────────────────────────────
+
+export function useRecordUserSearch() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { email: string; query: string }) => {
+      if (!actor || !data.email) return;
+      await actor.recordUserSearch(data.email, data.query);
+    },
+  });
+}
+
+export function useRecordUserClick() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { email: string; url: string }) => {
+      if (!actor || !data.email) return;
+      await actor.recordUserClick(data.email, data.url);
+    },
+  });
+}
+
+export function useGetUserSearchHistory(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<string[]>({
+    queryKey: ["userSearchHistory", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      return actor.getUserSearchHistory(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useGetUserClickHistory(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<string[]>({
+    queryKey: ["userClickHistory", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      return actor.getUserClickHistory(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
   });
 }

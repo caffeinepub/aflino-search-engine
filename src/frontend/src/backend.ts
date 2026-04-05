@@ -249,12 +249,16 @@ export interface backendInterface {
     resumeCampaign(campaignId: bigint): Promise<void>;
     reviewFlaggedDomain(domain: string, action: Variant_remove_approve_block): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    searchWebsites(searchQuery: string): Promise<Array<Website>>;
+    searchWebsites(searchQuery: string, emailOpt: [string] | []): Promise<Array<Website>>;
     setAdsEnabled(enabled: boolean): Promise<void>;
     submitWebsite(url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateCampaign(campaignId: bigint, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
     verifyDomain(websiteId: bigint): Promise<boolean>;
+    recordUserSearch(email: string, query: string): Promise<void>;
+    recordUserClick(email: string, url: string): Promise<void>;
+    getUserSearchHistory(email: string): Promise<Array<string>>;
+    getUserClickHistory(email: string): Promise<Array<string>>;
 }
 import type { AdvertiserProfile as _AdvertiserProfile, AdvertiserStatus as _AdvertiserStatus, BlacklistEntry as _BlacklistEntry, BlacklistStatus as _BlacklistStatus, Campaign as _Campaign, CampaignStatus as _CampaignStatus, Result as _Result, UserProfile as _UserProfile, UserRole as _UserRole, Website as _Website, WebsiteStatus as _WebsiteStatus } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -805,17 +809,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async searchWebsites(arg0: string): Promise<Array<Website>> {
+    async searchWebsites(arg0: string, arg1: [string] | []): Promise<Array<Website>> {
         if (this.processError) {
             try {
-                const result = await this.actor.searchWebsites(arg0);
+                const result = await this.actor.searchWebsites(arg0, arg1);
                 return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.searchWebsites(arg0);
+            const result = await this.actor.searchWebsites(arg0, arg1);
             return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -887,6 +891,70 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.verifyDomain(arg0);
             return result;
+        }
+    }
+    async recordUserSearch(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).recordUserSearch(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).recordUserSearch(arg0, arg1);
+            return result;
+        }
+    }
+    async recordUserClick(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).recordUserClick(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).recordUserClick(arg0, arg1);
+            return result;
+        }
+    }
+    async getUserSearchHistory(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).getUserSearchHistory(arg0);
+                return result as string[];
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).getUserSearchHistory(arg0);
+            return result as string[];
+        }
+    }
+    async getUserClickHistory(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).getUserClickHistory(arg0);
+                return result as string[];
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).getUserClickHistory(arg0);
+            return result as string[];
         }
     }
 }

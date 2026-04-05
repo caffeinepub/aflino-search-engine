@@ -199,7 +199,7 @@ export interface backendInterface {
     reviewFlaggedDomain(domain: string, action: Variant_remove_approve_block): Promise<void>;
     runOwnershipCleanup(): Promise<bigint>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    searchWebsites(searchQuery: string): Promise<Array<Website>>;
+    searchWebsites(searchQuery: string, emailOpt: [string] | []): Promise<Array<Website>>;
     setAdminBoost(websiteId: bigint, boost: bigint): Promise<Website>;
     setAdsEnabled(enabled: boolean): Promise<void>;
     submitWebsite(ownerId: string, url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
@@ -207,4 +207,8 @@ export interface backendInterface {
     updateCampaign(campaignId: bigint, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
     updateSitemap(websiteId: bigint, sitemapUrl: string): Promise<Website>;
     verifyDomain(websiteId: bigint): Promise<boolean>;
+    recordUserSearch(email: string, query: string): Promise<void>;
+    recordUserClick(email: string, url: string): Promise<void>;
+    getUserSearchHistory(email: string): Promise<Array<string>>;
+    getUserClickHistory(email: string): Promise<Array<string>>;
 }

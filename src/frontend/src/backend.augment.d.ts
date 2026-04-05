@@ -23,7 +23,10 @@ declare module "./backend" {
     getCallerUserRole(): Promise<UserRole>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
-    searchWebsites(searchQuery: string): Promise<Website[]>;
+    searchWebsites(
+      searchQuery: string,
+      emailOpt: [string] | [],
+    ): Promise<Website[]>;
     getStats(): Promise<Stats>;
     getMyWebsites(): Promise<Website[]>;
     getMyWebsitesByEmail(email: string): Promise<Website[]>;
@@ -64,6 +67,12 @@ declare module "./backend" {
 
     // Click tracking
     recordClick(url: string): Promise<void>;
+
+    // User behavior / personalization
+    recordUserSearch(email: string, query: string): Promise<void>;
+    recordUserClick(email: string, url: string): Promise<void>;
+    getUserSearchHistory(email: string): Promise<string[]>;
+    getUserClickHistory(email: string): Promise<string[]>;
 
     // Advertiser / Monetization
     applyForAdvertiser(email: string): Promise<void>;

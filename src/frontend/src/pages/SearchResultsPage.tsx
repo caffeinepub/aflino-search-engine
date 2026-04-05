@@ -17,6 +17,8 @@ import {
   useRecordAdImpression,
   useRecordClick,
   useRecordImpression,
+  useRecordUserClick,
+  useRecordUserSearch,
   useSearchWebsites,
 } from "../hooks/useQueries";
 
@@ -278,11 +280,6 @@ export default function SearchResultsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: results = [], isLoading } = useSearchWebsites(q);
-  const { data: ads = [] } = useGetAdsForSearch(q);
-  const { data: adsEnabled = false } = useGetAdsEnabled();
-  const { mutate: recordClick } = useRecordClick();
-  const { mutate: recordImpression } = useRecordImpression();
   const {
     isAuthenticated: isLocalAuth,
     role: authRole,
@@ -291,6 +288,15 @@ export default function SearchResultsPage() {
   } = useAuth();
 
   const isUserLoggedIn = isLocalAuth && authRole === "user";
+  const userEmail = isLocalAuth && authRole === "user" ? authUser : null;
+
+  const { data: results = [], isLoading } = useSearchWebsites(q, userEmail);
+  const { data: ads = [] } = useGetAdsForSearch(q);
+  const { data: adsEnabled = false } = useGetAdsEnabled();
+  const { mutate: recordClick } = useRecordClick();
+  const { mutate: recordImpression } = useRecordImpression();
+  const { mutate: recordUserSearch } = useRecordUserSearch();
+  const { mutate: recordUserClick } = useRecordUserClick();
   const userInitial = authUser ? authUser.charAt(0).toUpperCase() : "U";
 
   // Admin-configurable logo URL
@@ -314,6 +320,19 @@ export default function SearchResultsPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [profileMenuOpen]);
 
+  // Cache search query in localStorage for instant display (speed layer)
+  useEffect(() => {
+    if (!q.trim() || !userEmail) return;
+    const key = `aflino_search_history_${userEmail}`;
+    try {
+      const existing: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+      const updated = [q, ...existing.filter((h) => h !== q)].slice(0, 50);
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+  }, [q, userEmail]);
+
   // Sync input + reset page + scroll to top whenever the URL query changes
   useEffect(
     () => {
@@ -327,6 +346,10 @@ export default function SearchResultsPage() {
   const handleSearch = () => {
     const term = inputValue.trim();
     if (!term) return;
+    // Record search query for logged-in users (fire-and-forget)
+    if (userEmail) {
+      recordUserSearch({ email: userEmail, query: term });
+    }
     void navigate({ to: "/search", search: { q: term } });
   };
 
@@ -336,6 +359,24 @@ export default function SearchResultsPage() {
 
   const handleClickTrack = (url: string) => {
     recordClick(url);
+    // Record user-specific click for personalization (fire-and-forget)
+    if (userEmail) {
+      recordUserClick({ email: userEmail, url });
+      // Also cache in localStorage for instant access (speed layer)
+      try {
+        const key = `aflino_click_history_${userEmail}`;
+        const existing: string[] = JSON.parse(
+          localStorage.getItem(key) ?? "[]",
+        );
+        const updated = [url, ...existing.filter((u) => u !== url)].slice(
+          0,
+          100,
+        );
+        localStorage.setItem(key, JSON.stringify(updated));
+      } catch {
+        // ignore storage errors
+      }
+    }
   };
 
   const handleUserLogout = () => {

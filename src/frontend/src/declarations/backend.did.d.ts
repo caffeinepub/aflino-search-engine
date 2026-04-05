@@ -177,7 +177,7 @@ export interface _SERVICE {
     undefined
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
-  'searchWebsites' : ActorMethod<[string], Array<Website>>,
+  'searchWebsites' : ActorMethod<[string, [] | [string]], Array<Website>>,
   'setAdminBoost' : ActorMethod<[bigint, bigint], Website>,
   'setAdsEnabled' : ActorMethod<[boolean], undefined>,
   'submitWebsite' : ActorMethod<
