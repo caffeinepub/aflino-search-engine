@@ -26,6 +26,26 @@ actor {
 
   public type WebsiteStatus = { #pending; #approved; #rejected };
 
+  public type IndexStatus = { #notIndexed; #pending; #indexed; #error };
+
+  // ─── Legacy type (V1) — matches what is currently stored on-chain ────────────────
+  // Keep this type exactly as the old Website was so Motoko can deserialise it.
+  type WebsiteV1 = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    ownerPrincipal : Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+  };
+
+  // ─── Current Website type (V2) — adds Search Center fields ─────────────────
   public type Website = {
     id : Nat;
     url : Text;
@@ -39,6 +59,21 @@ actor {
     isSeed : Bool;
     submittedAt : Int;
     approvedAt : ?Int;
+    // Search Center fields (added in V2)
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;   // when user manually inspects via URL Inspection
+    lastCrawledAt : ?Int;   // when system crawler processes the site
+  };
+
+  public type PageStatus = { #pending; #indexed; #error };
+
+  public type Page = {
+    id : Nat;
+    websiteId : Nat;
+    url : Text;
+    status : PageStatus;
+    addedAt : Int;
   };
 
   public type SeedEntry = {
@@ -115,8 +150,20 @@ actor {
   // ─── Stable State ─────────────────────────────────────────────────────────
 
   var nextId : Nat = 1;
-  var websites : [Website] = [];
+
+  // V1 stable var — read-only after migration; kept so Motoko can deserialise
+  // existing on-chain data during the first upgrade.
+  var websites : [WebsiteV1] = [];
+
+  // V2 stable var — the live array used by all runtime logic.
+  // Populated from `websites` (V1) during postupgrade when empty.
+  var websitesV2 : [Website] = [];
+
   var indexTerms : [(Text, [Nat])] = [];
+
+  // Search Center: pages
+  var pages : [Page] = [];
+  var nextPageId : Nat = 1;
 
   // Security state
   var securityLogs : [SecurityLog] = [];
@@ -134,6 +181,40 @@ actor {
   var adClickCooldowns : [(Text, Int)] = [];
 
   var userProfiles : [(Principal, UserProfile)] = [];
+
+  // ─── Migration helper ─────────────────────────────────────────────────────
+
+  // Upgrade V1 record to V2 by supplying default values for the new fields.
+  func migrateWebsite(w : WebsiteV1) : Website {
+    {
+      id             = w.id;
+      url            = w.url;
+      title          = w.title;
+      description    = w.description;
+      keywords       = w.keywords;
+      status         = w.status;
+      ownerPrincipal = w.ownerPrincipal;
+      verificationToken = w.verificationToken;
+      isVerified     = w.isVerified;
+      isSeed         = w.isSeed;
+      submittedAt    = w.submittedAt;
+      approvedAt     = w.approvedAt;
+      indexStatus    = #notIndexed;
+      sitemapUrl     = null;
+      lastCheckedAt  = null;
+      lastCrawledAt  = null;
+    }
+  };
+
+  // Run migration once on first upgrade: if websitesV2 is empty but the old
+  // websites array has data, migrate all records.
+  system func postupgrade() {
+    if (websitesV2.size() == 0 and websites.size() > 0) {
+      websitesV2 := websites.map(migrateWebsite);
+      // Clear the V1 array to free memory; data now lives in websitesV2.
+      websites := [];
+    };
+  };
 
   // ─── User Profile Management ──────────────────────────────────────────────
 
@@ -183,8 +264,6 @@ actor {
     };
     nextLogId += 1;
     if (securityLogs.size() >= 1000) {
-      // Keep entries with id > (nextLogId - 501), i.e. the newest 500
-      // Keep the newest ~500 entries: drop any entry whose id is in the first half
       let keepFrom = nextLogId / 2;
       securityLogs := securityLogs.filter(func(e : SecurityLog) : Bool { e.id >= keepFrom });
     };
@@ -229,17 +308,15 @@ actor {
   // ─── Domain Extraction ────────────────────────────────────────────────────
 
   func extractDomain(url : Text) : Text {
-    // Strip scheme by splitting on "://" and taking the part after it
     var stripped = url;
     if (stripped.startsWith(#text "https://") or stripped.startsWith(#text "http://")) {
       let schemeIter = stripped.split(#text "://");
-      ignore schemeIter.next(); // skip scheme part
+      ignore schemeIter.next();
       switch (schemeIter.next()) {
         case (?rest) { stripped := rest };
         case null {};
       };
     };
-    // Take everything before the first '/'
     let parts = stripped.split(#char '/');
     switch (parts.next()) {
       case (?domain) { domain.toLower() };
@@ -249,7 +326,6 @@ actor {
 
   // ─── Input Validation & Sanitization ─────────────────────────────────────
 
-  // All patterns are pre-lowercased; we lowercase the input before checking.
   let INJECTION_PATTERNS : [Text] = [
     "<script", "</script", "eval(", "javascript:", "<iframe",
     "</iframe", "drop table", "select * from", "insert into",
@@ -315,7 +391,6 @@ actor {
     };
   };
 
-  // Count non-overlapping occurrences of needle in haystack (both pre-lowercased).
   func countOccurrences(haystack : Text, needle : Text) : Nat {
     if (needle.size() == 0) return 0;
     var count = 0;
@@ -323,9 +398,8 @@ actor {
     label scan loop {
       if (remaining.contains(#text needle)) {
         count += 1;
-        // Advance past the needle: split on first occurrence and take the tail.
         let parts = remaining.split(#text needle);
-        ignore parts.next(); // skip the part before the needle
+        ignore parts.next();
         switch (parts.next()) {
           case (?tail) { remaining := tail };
           case null { break scan };
@@ -502,7 +576,7 @@ actor {
         };
       };
     };
-    let approvedSites = websites.filter(func(w : Website) : Bool { w.status == #approved });
+    let approvedSites = websitesV2.filter(func(w : Website) : Bool { w.status == #approved });
     let qLower = trimmed.toLower();
     for (site in approvedSites.vals()) {
       let titleLower = site.title.toLower();
@@ -542,12 +616,13 @@ actor {
 
     checkBlacklist(url, callerText);
 
+    // Global duplicate domain check: one domain = one owner across all users
     let domain = extractDomain(url);
-    for (site in websites.vals()) {
+    for (site in websitesV2.vals()) {
       if (extractDomain(site.url) == domain and site.status != #rejected) {
         incrementDomainAbuse(domain);
         autoFlagDomain(domain, callerText);
-        Runtime.trap("Domain already submitted");
+        Runtime.trap("This domain is already registered by another user");
       };
     };
 
@@ -566,21 +641,25 @@ actor {
       isSeed = false;
       submittedAt = Time.now();
       approvedAt = null;
+      indexStatus = #notIndexed;
+      sitemapUrl = null;
+      lastCheckedAt = null;
+      lastCrawledAt = null;
     };
-    websites := websites.concat([site]);
+    websitesV2 := websitesV2.concat([site]);
     site
   };
 
   public query ({ caller }) func getMyWebsites() : async [Website] {
     requireRegistered(caller);
-    websites.filter(func(w : Website) : Bool { w.ownerPrincipal == caller })
+    websitesV2.filter(func(w : Website) : Bool { w.ownerPrincipal == caller })
   };
 
   // ─── Domain Verification ──────────────────────────────────────────────────
 
   public query ({ caller }) func getVerificationToken(websiteId : Nat) : async Text {
     requireRegistered(caller);
-    switch (websites.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
@@ -598,7 +677,7 @@ actor {
   public shared ({ caller }) func verifyDomain(websiteId : Nat) : async Bool {
     requireRegistered(caller);
     let callerText = caller.toText();
-    switch (websites.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
@@ -610,7 +689,7 @@ actor {
           let body = await Outcall.httpGetRequest(verifyUrl, [], transform);
           let token = site.verificationToken;
           let verified = body.contains(#text token);
-          websites := websites.map(func(w : Website) : Website {
+          websitesV2 := websitesV2.map(func(w : Website) : Website {
             if (w.id == websiteId) { { w with isVerified = verified } } else w
           });
           verified
@@ -621,13 +700,136 @@ actor {
     }
   };
 
+  // ─── Search Center: Sitemap Update ────────────────────────────────────────
+
+  public shared ({ caller }) func updateSitemap(websiteId : Nat, sitemapUrl : Text) : async Website {
+    requireRegistered(caller);
+    let callerText = caller.toText();
+
+    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) {
+        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized: You do not own this website");
+        };
+      };
+    };
+
+    if (sitemapUrl.size() == 0 or sitemapUrl.size() > 500) {
+      Runtime.trap("Invalid sitemap URL length");
+    };
+    if (not sitemapUrl.startsWith(#text "http://") and not sitemapUrl.startsWith(#text "https://")) {
+      Runtime.trap("Sitemap URL must start with http:// or https://");
+    };
+    if (not sitemapUrl.endsWith(#text ".xml")) {
+      Runtime.trap("Sitemap URL must end with .xml");
+    };
+    if (containsInjection(sitemapUrl)) {
+      addLog("SUSPICIOUS_INPUT", callerText, "Injection attempt in sitemap URL");
+      Runtime.trap("Invalid input");
+    };
+
+    var updatedSite : ?Website = null;
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
+      if (w.id == websiteId) {
+        let updated = { w with sitemapUrl = ?sitemapUrl };
+        updatedSite := ?updated;
+        updated
+      } else w
+    });
+    switch (updatedSite) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) { site };
+    };
+  };
+
+  // ─── Search Center: URL Inspection & Request Indexing ─────────────────────
+
+  public shared ({ caller }) func requestIndexing(websiteId : Nat, pageUrl : Text) : async Website {
+    requireRegistered(caller);
+    let callerText = caller.toText();
+
+    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) {
+        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized: You do not own this website");
+        };
+      };
+    };
+
+    validateUrl(pageUrl, callerText);
+
+    let now = Time.now();
+    var pageExists = false;
+    pages := pages.map(func(p : Page) : Page {
+      if (p.websiteId == websiteId and p.url == pageUrl) {
+        pageExists := true;
+        { p with status = #pending }
+      } else p
+    });
+    if (not pageExists) {
+      let newPage : Page = {
+        id = nextPageId;
+        websiteId;
+        url = pageUrl;
+        status = #pending;
+        addedAt = now;
+      };
+      nextPageId += 1;
+      pages := pages.concat([newPage]);
+    };
+
+    var updatedSite : ?Website = null;
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
+      if (w.id == websiteId) {
+        let updated = { w with indexStatus = #pending; lastCheckedAt = ?now };
+        updatedSite := ?updated;
+        updated
+      } else w
+    });
+    switch (updatedSite) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) { site };
+    };
+  };
+
+  public query ({ caller }) func getPagesForWebsite(websiteId : Nat) : async [Page] {
+    requireRegistered(caller);
+    switch (websitesV2.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (null) { Runtime.trap("Website not found") };
+      case (?site) {
+        if (site.ownerPrincipal != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized");
+        };
+      };
+    };
+    pages.filter(func(p : Page) : Bool { p.websiteId == websiteId })
+  };
+
+  public shared ({ caller }) func updatePageStatus(pageId : Nat, status : PageStatus) : async () {
+    requireAdmin(caller);
+    var found = false;
+    pages := pages.map(func(p : Page) : Page {
+      if (p.id == pageId) { found := true; { p with status } } else p
+    });
+    if (not found) { Runtime.trap("Page not found") };
+  };
+
+  public shared ({ caller }) func updateLastCrawledAt(websiteId : Nat) : async () {
+    requireAdmin(caller);
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
+      if (w.id == websiteId) { { w with lastCrawledAt = ?Time.now() } } else w
+    });
+  };
+
   // ─── Admin: Manage Websites ───────────────────────────────────────────────
 
   public shared ({ caller }) func approveWebsite(websiteId : Nat) : async Website {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var approvedSite : ?Website = null;
-    websites := websites.map(func(w : Website) : Website {
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #approved; approvedAt = ?Time.now() };
         approvedSite := ?updated;
@@ -644,7 +846,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var rejectedSite : ?Website = null;
-    websites := websites.map(func(w : Website) : Website {
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #rejected };
         rejectedSite := ?updated;
@@ -671,7 +873,7 @@ actor {
     validateDescription(description, callerText);
     validateKeywords(keywords, callerText);
     var editedSite : ?Website = null;
-    websites := websites.map(func(w : Website) : Website {
+    websitesV2 := websitesV2.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with title; description; keywords };
         editedSite := ?updated;
@@ -693,18 +895,18 @@ actor {
   public shared ({ caller }) func deleteWebsite(websiteId : Nat) : async () {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
-    websites := websites.filter(func(w : Website) : Bool { w.id != websiteId });
+    websitesV2 := websitesV2.filter(func(w : Website) : Bool { w.id != websiteId });
     removeFromIndex(websiteId);
   };
 
   public query ({ caller }) func getAllWebsites() : async [Website] {
     requireAdmin(caller);
-    websites
+    websitesV2
   };
 
   public query ({ caller }) func getPendingWebsites() : async [Website] {
     requireAdmin(caller);
-    websites.filter(func(w : Website) : Bool { w.status == #pending })
+    websitesV2.filter(func(w : Website) : Bool { w.status == #pending })
   };
 
   // ─── Admin: Seed Data Import ──────────────────────────────────────────────
@@ -729,14 +931,17 @@ actor {
         isSeed = true;
         submittedAt = Time.now();
         approvedAt = ?Time.now();
+        indexStatus = #notIndexed;
+        sitemapUrl = null;
+        lastCheckedAt = null;
+        lastCrawledAt = null;
       };
-      websites := websites.concat([site]);
+      websitesV2 := websitesV2.concat([site]);
       addToIndex(site);
       count += 1;
     };
     count
   };
-
 
   // ─── Click Tracking ─────────────────────────────────────────────────────
 
@@ -754,9 +959,9 @@ actor {
 
   public query func getStats() : async Stats {
     {
-      total = websites.size();
-      approved = websites.filter(func(w : Website) : Bool { w.status == #approved }).size();
-      pending = websites.filter(func(w : Website) : Bool { w.status == #pending }).size();
+      total = websitesV2.size();
+      approved = websitesV2.filter(func(w : Website) : Bool { w.status == #approved }).size();
+      pending = websitesV2.filter(func(w : Website) : Bool { w.status == #pending }).size();
     }
   };
 
@@ -764,7 +969,6 @@ actor {
 
   public query ({ caller }) func getSecurityLogs() : async [SecurityLog] {
     requireAdmin(caller);
-    // Return newest-first by reversing the array
     securityLogs.reverse()
   };
 
@@ -837,12 +1041,10 @@ actor {
 
   // ─── Advertiser / Monetization System ─────────────────────────────────────
 
-  // Apply to become an advertiser (called with user email)
   public func applyForAdvertiser(email : Text) : async () {
     if (email.size() == 0 or email.size() > 200) {
       Runtime.trap("Invalid email");
     };
-    // If already applied, do nothing (idempotent)
     for (p in advertiserProfiles.vals()) {
       if (p.email == email) {
         Runtime.trap("Already applied");
@@ -858,18 +1060,15 @@ actor {
     advertiserProfiles := advertiserProfiles.concat([profile]);
   };
 
-  // Get profile for a given email (user calls this with their own email)
   public query func getMyAdvertiserProfile(email : Text) : async ?AdvertiserProfile {
     advertiserProfiles.find(func(p : AdvertiserProfile) : Bool { p.email == email })
   };
 
-  // Admin: get all advertiser applications
   public query ({ caller }) func getAllAdvertiserApplications() : async [AdvertiserProfile] {
     requireAdmin(caller);
     advertiserProfiles
   };
 
-  // Admin: approve an advertiser application
   public shared ({ caller }) func approveAdvertiser(email : Text) : async () {
     requireAdmin(caller);
     var found = false;
@@ -879,12 +1078,9 @@ actor {
         { p with status = #approved; reviewedAt = ?Time.now() }
       } else p
     });
-    if (not found) {
-      Runtime.trap("Advertiser not found");
-    };
+    if (not found) { Runtime.trap("Advertiser not found") };
   };
 
-  // Admin: reject an advertiser application
   public shared ({ caller }) func rejectAdvertiser(email : Text) : async () {
     requireAdmin(caller);
     var found = false;
@@ -894,17 +1090,12 @@ actor {
         { p with status = #rejected; reviewedAt = ?Time.now() }
       } else p
     });
-    if (not found) {
-      Runtime.trap("Advertiser not found");
-    };
+    if (not found) { Runtime.trap("Advertiser not found") };
   };
 
-  // Admin: manually add balance to an advertiser (minimum ₹500)
   public shared ({ caller }) func addAdvertiserBalance(email : Text, amount : Nat) : async () {
     requireAdmin(caller);
-    if (amount < 500) {
-      Runtime.trap("Minimum top-up is Rs. 500");
-    };
+    if (amount < 500) { Runtime.trap("Minimum top-up is Rs. 500") };
     var found = false;
     advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
       if (p.email == email) {
@@ -912,9 +1103,7 @@ actor {
         { p with balance = p.balance + amount }
       } else p
     });
-    if (not found) {
-      Runtime.trap("Advertiser not found");
-    };
+    if (not found) { Runtime.trap("Advertiser not found") };
   };
 
   // ─── Ad Engine ────────────────────────────────────────────────────────────
@@ -928,9 +1117,7 @@ actor {
       case (?profile) {
         switch (profile.status) {
           case (#approved) {
-            if (profile.balance == 0) {
-              Runtime.trap("Advertiser has no balance");
-            };
+            if (profile.balance == 0) { Runtime.trap("Advertiser has no balance") };
           };
           case (_) { Runtime.trap("Advertiser not approved") };
         };
@@ -947,18 +1134,13 @@ actor {
   };
 
   func requireCampaignOwnership(caller : Principal, campaignId : Nat) {
-    if (AccessControl.isAdmin(accessControlState, caller)) {
-      return;
-    };
-
+    if (AccessControl.isAdmin(accessControlState, caller)) { return };
     switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
       case (?profile) {
         let userEmail = profile.1.email;
         switch (getCampaignOwnerEmail(campaignId)) {
           case (?ownerEmail) {
-            if (userEmail != ownerEmail) {
-              Runtime.trap("Unauthorized: Not campaign owner");
-            };
+            if (userEmail != ownerEmail) { Runtime.trap("Unauthorized: Not campaign owner") };
           };
           case (null) { Runtime.trap("Campaign not found") };
         };
@@ -967,7 +1149,6 @@ actor {
     };
   };
 
-  // Create campaign
   public shared ({ caller }) func createCampaign(
     email : Text,
     name : Text,
@@ -978,136 +1159,75 @@ actor {
     destinationUrl : Text
   ) : async Campaign {
     requireRegistered(caller);
-
-    // Verify caller owns this email
     switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
       case (?profile) {
-        if (profile.1.email != email) {
-          Runtime.trap("Unauthorized: Email does not match caller profile");
-        };
+        if (profile.1.email != email) { Runtime.trap("Unauthorized: Email does not match caller profile") };
       };
       case (null) { Runtime.trap("User profile not found") };
     };
-
     requireApprovedAdvertiser(email);
-
-    if (name.size() == 0 or name.size() > 100) {
-      Runtime.trap("Invalid campaign name");
-    };
-    if (budget < 500) {
-      Runtime.trap("Minimum campaign budget is 500");
-    };
-    if (bidAmount < 5 or bidAmount > 500) {
-      Runtime.trap("Bid amount must be between 5 and 500");
-    };
-    if (keywords.size() == 0 or keywords.size() > 15) {
-      Runtime.trap("Invalid keywords array size");
-    };
+    if (name.size() == 0 or name.size() > 100) { Runtime.trap("Invalid campaign name") };
+    if (budget < 500) { Runtime.trap("Minimum campaign budget is 500") };
+    if (bidAmount < 5 or bidAmount > 500) { Runtime.trap("Bid amount must be between 5 and 500") };
+    if (keywords.size() == 0 or keywords.size() > 15) { Runtime.trap("Invalid keywords array size") };
     for (kw in keywords.vals()) {
-      if (kw.size() == 0 or kw.size() > 50) {
-        Runtime.trap("Invalid keyword");
-      };
+      if (kw.size() == 0 or kw.size() > 50) { Runtime.trap("Invalid keyword") };
     };
     let id = campaignIdCounter;
     campaignIdCounter += 1;
     let campaign : Campaign = {
-      id;
-      advertiserEmail = email;
-      name;
-      budget;
-      dailyBudget;
-      bidAmount;
-      keywords;
-      destinationUrl;
-      status = #active;
-      impressions = 0;
-      clicks = 0;
-      spend = 0;
-      createdAt = Time.now();
+      id; advertiserEmail = email; name; budget; dailyBudget; bidAmount; keywords; destinationUrl;
+      status = #active; impressions = 0; clicks = 0; spend = 0; createdAt = Time.now();
     };
     campaigns := campaigns.concat([campaign]);
     campaign;
   };
 
-  // Update campaign
   public shared ({ caller }) func updateCampaign(
-    campaignId : Nat,
-    name : Text,
-    budget : Nat,
-    dailyBudget : Nat,
-    bidAmount : Nat,
-    keywords : [Text],
-    destinationUrl : Text
+    campaignId : Nat, name : Text, budget : Nat, dailyBudget : Nat,
+    bidAmount : Nat, keywords : [Text], destinationUrl : Text
   ) : async Campaign {
     requireRegistered(caller);
     requireCampaignOwnership(caller, campaignId);
-
     var found = false;
     var updatedCampaign : ?Campaign = null;
     campaigns := campaigns.map(func(c : Campaign) : Campaign {
       if (c.id == campaignId) {
         found := true;
-        let updated = {
-          c with
-          name;
-          budget;
-          dailyBudget;
-          bidAmount;
-          keywords;
-          destinationUrl;
-        };
+        let updated = { c with name; budget; dailyBudget; bidAmount; keywords; destinationUrl };
         updatedCampaign := ?updated;
         updated;
       } else { c };
     });
-    if (not found) {
-      Runtime.trap("Campaign not found");
-    };
+    if (not found) { Runtime.trap("Campaign not found") };
     switch (updatedCampaign) {
       case (null) { Runtime.trap("Campaign not found") };
       case (?campaign) { campaign };
     };
   };
 
-  // Pause campaign
   public shared ({ caller }) func pauseCampaign(campaignId : Nat) : async () {
     requireRegistered(caller);
     requireCampaignOwnership(caller, campaignId);
-
     var found = false;
     campaigns := campaigns.map(func(c : Campaign) : Campaign {
-      if (c.id == campaignId) {
-        found := true;
-        { c with status = #paused };
-      } else { c };
+      if (c.id == campaignId) { found := true; { c with status = #paused } } else { c };
     });
-    if (not found) {
-      Runtime.trap("Campaign not found");
-    };
+    if (not found) { Runtime.trap("Campaign not found") };
   };
 
-  // Resume campaign
   public shared ({ caller }) func resumeCampaign(campaignId : Nat) : async () {
     requireRegistered(caller);
     requireCampaignOwnership(caller, campaignId);
-
     var found = false;
     campaigns := campaigns.map(func(c : Campaign) : Campaign {
-      if (c.id == campaignId) {
-        found := true;
-        { c with status = #active };
-      } else { c };
+      if (c.id == campaignId) { found := true; { c with status = #active } } else { c };
     });
-    if (not found) {
-      Runtime.trap("Campaign not found");
-    };
+    if (not found) { Runtime.trap("Campaign not found") };
   };
 
-  // Get campaigns for a specific advertiser
   public shared ({ caller }) func getMyCampaigns(email : Text) : async [Campaign] {
     requireRegistered(caller);
-
-    // Verify caller owns this email
     switch (userProfiles.find(func(entry : (Principal, UserProfile)) : Bool { entry.0 == caller })) {
       case (?profile) {
         if (profile.1.email != email and not AccessControl.isAdmin(accessControlState, caller)) {
@@ -1115,26 +1235,19 @@ actor {
         };
       };
       case (null) {
-        if (not AccessControl.isAdmin(accessControlState, caller)) {
-          Runtime.trap("User profile not found");
-        };
+        if (not AccessControl.isAdmin(accessControlState, caller)) { Runtime.trap("User profile not found") };
       };
     };
-
     campaigns.filter(func(c : Campaign) : Bool { c.advertiserEmail == email });
   };
 
-  // Admin: get all campaigns
   public query ({ caller }) func getAllCampaigns() : async [Campaign] {
     requireAdmin(caller);
     campaigns;
   };
 
-  // Get ads for search query
   public func getAdsForSearch(searchQuery : Text) : async [AdResult] {
-    if (not adsEnabled) {
-      return [];
-    };
+    if (not adsEnabled) { return [] };
     let trimmed = searchQuery.trim(#char ' ');
     if (trimmed.size() == 0) { return [] };
     let queryTokens = tokenize(trimmed);
@@ -1148,21 +1261,12 @@ actor {
                 var keywordMatchScore = 0;
                 for (token in queryTokens.vals()) {
                   for (kw in c.keywords.vals()) {
-                    if (kw.toLower().contains(#text token)) {
-                      keywordMatchScore += 1;
-                    };
+                    if (kw.toLower().contains(#text token)) { keywordMatchScore += 1 };
                   };
                 };
                 if (keywordMatchScore > 0) {
                   let score = c.bidAmount * keywordMatchScore;
-                  let adResult : AdResult = {
-                    campaignId = c.id;
-                    name = c.name;
-                    destinationUrl = c.destinationUrl;
-                    bidAmount = c.bidAmount;
-                    score;
-                  };
-                  results := results.concat([adResult]);
+                  results := results.concat([{ campaignId = c.id; name = c.name; destinationUrl = c.destinationUrl; bidAmount = c.bidAmount; score }]);
                 };
               };
             };
@@ -1175,28 +1279,17 @@ actor {
     let sorted = results.sort(func(a : AdResult, b : AdResult) : { #less; #equal; #greater } {
       if (a.score > b.score) #less else if (a.score < b.score) #greater else #equal
     });
-    if (sorted.size() > 2) {
-      [sorted[0], sorted[1]];
-    } else {
-      sorted;
-    };
+    if (sorted.size() > 2) { [sorted[0], sorted[1]] } else { sorted };
   };
 
-  // Record ad impression
   public func recordAdImpression(campaignId : Nat) : async () {
     var found = false;
     campaigns := campaigns.map(func(c : Campaign) : Campaign {
-      if (c.id == campaignId) {
-        found := true;
-        { c with impressions = c.impressions + 1 };
-      } else { c };
+      if (c.id == campaignId) { found := true; { c with impressions = c.impressions + 1 } } else { c };
     });
-    if (not found) {
-      Runtime.trap("Campaign not found");
-    };
+    if (not found) { Runtime.trap("Campaign not found") };
   };
 
-  // Record ad click with cooldown
   public func recordAdClick(campaignId : Nat, userSession : Text) : async Result<(), Text> {
     let key = userSession # "_" # campaignId.toText();
     let now = Time.now();
@@ -1217,9 +1310,7 @@ actor {
     } else {
       switch (lastClick) {
         case (?timestamp) {
-          if (now - timestamp < cooldownNs) {
-            return #err("Cooldown active");
-          };
+          if (now - timestamp < cooldownNs) { return #err("Cooldown active") };
         };
         case (null) {};
       };
@@ -1235,9 +1326,7 @@ actor {
         { c with clicks = c.clicks + 1; spend = c.spend + c.bidAmount };
       } else { c };
     });
-    if (not found) {
-      return #err("Campaign not found");
-    };
+    if (not found) { return #err("Campaign not found") };
     advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
       if (p.email == advertiserEmail) {
         { p with balance = if (p.balance >= bidAmount) { p.balance - bidAmount } else { 0 } };
@@ -1246,12 +1335,8 @@ actor {
     #ok(());
   };
 
-  // Get adsEnabled flag
-  public query func getAdsEnabled() : async Bool {
-    adsEnabled;
-  };
+  public query func getAdsEnabled() : async Bool { adsEnabled };
 
-  // Admin: set adsEnabled flag
   public shared ({ caller }) func setAdsEnabled(enabled : Bool) : async () {
     requireAdmin(caller);
     adsEnabled := enabled;
