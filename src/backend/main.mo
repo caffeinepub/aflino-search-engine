@@ -246,8 +246,12 @@ actor {
 
   var userProfiles : [(Principal, UserProfile)] = [];
 
-  // Crawler queue: stable list of websiteIds pending crawl
+  // Crawler queue V1 (legacy, migrated on postupgrade)
   var crawlQueue : [Nat] = [];
+
+  // Crawler queue V2: priority-based queue [(priority, websiteId)]
+  // Priority: New=100, Active=70, LowActivity=30
+  var crawlQueueV2 : [(Nat, Nat)] = [];
 
   // ─── Migration helpers ────────────────────────────────────────────────────
 
@@ -344,6 +348,11 @@ actor {
     if (websitesV4.size() == 0 and websitesV3.size() > 0) {
       websitesV4 := websitesV3.map(migrateV3toV4);
       websitesV3 := [];
+    };
+    // Step 4: Migrate crawlQueue [Nat] -> crawlQueueV2 [(Nat, Nat)]
+    if (crawlQueueV2.size() == 0 and crawlQueue.size() > 0) {
+      crawlQueueV2 := Array.tabulate<(Nat, Nat)>(crawlQueue.size(), func(i : Nat) : (Nat, Nat) { (70, crawlQueue[i]) });
+      crawlQueue := [];
     };
   };
 
@@ -1282,9 +1291,10 @@ actor {
         updated
       } else w
     });
-    // Add websiteId to crawlQueue if not already queued
-    if (not crawlQueue.any(func(id : Nat) : Bool { id == websiteId })) {
-      crawlQueue := crawlQueue.concat([websiteId]);
+    // Add websiteId to crawlQueueV2 with appropriate priority
+    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+      case (?site) { enqueueWithPriority(websiteId, getCrawlPriority(site)) };
+      case (null) { enqueueWithPriority(websiteId, PRIORITY_NEW) };
     };
 
     switch (updatedSite) {
@@ -1885,7 +1895,7 @@ actor {
       case (null) { null };
       case (?rest) {
         // Extract same slice from original html (preserve case)
-        let openIdx = html.size() - rest.size();
+        let openIdx : Nat = if (html.size() >= rest.size()) { html.size() - rest.size() } else { 0 };
         ignore openIdx;
         // Use rest as slice of html at same offset
         let htmlRest = html.split(#text openTag);
@@ -2045,11 +2055,80 @@ actor {
     };
   };
 
+  // ─── Crawl Priority Helpers ─────────────────────────────────────────────────
+
+  // Intervals in nanoseconds
+  let SIX_HOURS_NS   : Int = 21_600_000_000_000;    // 6 hours
+  let ONE_DAY_NS     : Int = 86_400_000_000_000;     // 24 hours
+  let SEVEN_DAYS_NS  : Int = 604_800_000_000_000;    // 7 days
+  let ONE_DAY_NS_INT : Int = 86_400_000_000_000;     // 24 hours (for "new site" check)
+
+  // Priority values
+  let PRIORITY_NEW          : Nat = 100;
+  let PRIORITY_ACTIVE       : Nat = 70;
+  let PRIORITY_LOW_ACTIVITY : Nat = 30;
+
+  // Classify a site and return its crawl priority
+  func getCrawlPriority(site : Website) : Nat {
+    let now = Time.now();
+    // Never crawled OR submitted within last 24 hours → NEW
+    switch (site.lastCrawledAt) {
+      case (null) { return PRIORITY_NEW };
+      case (?_) {};
+    };
+    let submittedRecently = (now - site.submittedAt) < ONE_DAY_NS_INT;
+    if (submittedRecently) { return PRIORITY_NEW };
+    // Active if clickCounts >= 10
+    let clicks = getClicks(site.url);
+    if (clicks >= 10) { return PRIORITY_ACTIVE };
+    PRIORITY_LOW_ACTIVITY
+  };
+
+  // Returns the crawl interval for a given priority
+  func getCrawlInterval(priority : Nat) : Int {
+    if (priority >= PRIORITY_NEW) { return SIX_HOURS_NS };
+    if (priority >= PRIORITY_ACTIVE) { return ONE_DAY_NS };
+    SEVEN_DAYS_NS
+  };
+
+  // Returns true if the site is due for a re-crawl
+  func isDueCrawl(site : Website, now : Int) : Bool {
+    let priority = getCrawlPriority(site);
+    let interval = getCrawlInterval(priority);
+    switch (site.lastCrawledAt) {
+      case (null) { true };  // never crawled → always due
+      case (?lastCrawled) {
+        (now - lastCrawled) >= interval
+      };
+    };
+  };
+
+  // Insert a (priority, websiteId) pair into the queue, sorted descending by priority
+  // Deduplicates by websiteId
+  func enqueueWithPriority(websiteId : Nat, priority : Nat) {
+    // Remove existing entry for this websiteId (update priority)
+    let filtered = crawlQueueV2.filter(func(entry : (Nat, Nat)) : Bool { entry.1 != websiteId });
+    // Insert in sorted position (descending priority)
+    var inserted = false;
+    var result : [(Nat, Nat)] = [];
+    for (entry in filtered.vals()) {
+      if (not inserted and priority > entry.0) {
+        result := result.concat([(priority, websiteId)]);
+        inserted := true;
+      };
+      result := result.concat([entry]);
+    };
+    if (not inserted) {
+      result := result.concat([(priority, websiteId)]);
+    };
+    crawlQueueV2 := result;
+  };
+
   // ─── Admin: Crawler Queue & Runner ────────────────────────────────────────
 
-  public query ({ caller }) func getCrawlQueue() : async [Nat] {
+  public query ({ caller }) func getCrawlQueue() : async [(Nat, Nat)] {
     requireAdmin(caller);
-    crawlQueue
+    crawlQueueV2
   };
 
   // Admin can manually add a websiteId to the crawl queue
@@ -2057,23 +2136,47 @@ actor {
     requireAdmin(caller);
     switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
-      case (?_) {};
-    };
-    if (not crawlQueue.any(func(id : Nat) : Bool { id == websiteId })) {
-      crawlQueue := crawlQueue.concat([websiteId]);
+      case (?site) {
+        let priority = getCrawlPriority(site);
+        enqueueWithPriority(websiteId, priority);
+      };
     };
   };
 
-  // Main crawler function — admin-only, processes the crawl queue
+  // Check all websites and enqueue those due for re-crawl based on smart scheduling
+  // Classification: New (priority 100, 6h interval), Active >=10 clicks (priority 70, 24h),
+  // Low Activity (priority 30, 7 days)
+  public shared ({ caller }) func checkAndQueueRecrawl() : async Nat {
+    requireAdmin(caller);
+    let now = Time.now();
+    var queued : Nat = 0;
+    for (site in websitesV4.vals()) {
+      // Only process approved sites
+      if (site.status == #approved) {
+        if (isDueCrawl(site, now)) {
+          let priority = getCrawlPriority(site);
+          enqueueWithPriority(site.id, priority);
+          queued += 1;
+        };
+      };
+    };
+    addLog("RECRAWL_CHECK", caller.toText(),
+      "checkAndQueueRecrawl: " # queued.toText() # " sites queued");
+    queued
+  };
+
+  // Main crawler function — admin-only, processes the crawl queue (priority order)
   // Fetches each queued website, extracts title/description/links, updates index
   public shared ({ caller }) func runCrawler() : async Nat {
     requireAdmin(caller);
 
-    let queueSnapshot = crawlQueue;
+    // Process highest-priority first (queue is already sorted descending)
+    let queueSnapshot = crawlQueueV2;
     var processedCount : Nat = 0;
-    var remainingQueue : [Nat] = [];
+    var remainingQueue : [(Nat, Nat)] = [];
 
-    for (websiteId in queueSnapshot.vals()) {
+    for (entry in queueSnapshot.vals()) {
+      let websiteId = entry.1;
       // Find website
       switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
         case (null) {
@@ -2154,14 +2257,14 @@ actor {
             });
             upsertPage(websiteId, site.url, #error);
             addLog("CRAWLER_ERROR", caller.toText(), "Failed to crawl website " # websiteId.toText() # ": " # site.url);
-            remainingQueue := remainingQueue.concat([websiteId]);
+            remainingQueue := remainingQueue.concat([entry]);
           };
         };
       };
     };
 
     // Clean queue: only keep sites that failed (for retry)
-    crawlQueue := remainingQueue;
+    crawlQueueV2 := remainingQueue;
     addLog("CRAWLER_RUN", caller.toText(),
       "Crawled " # processedCount.toText() # " sites. " # remainingQueue.size().toText() # " failed (queued for retry).");
     processedCount

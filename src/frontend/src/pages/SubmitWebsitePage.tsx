@@ -7,7 +7,6 @@ import { ArrowLeft, CheckCircle2, Globe, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useSubmitWebsite } from "../hooks/useQueries";
 import {
   sanitizeText,
@@ -25,7 +24,6 @@ export default function SubmitWebsitePage() {
   const [submitted, setSubmitted] = useState(false);
 
   const auth = useAuth();
-  const { identity } = useInternetIdentity();
   const submitMutation = useSubmitWebsite();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,18 +141,6 @@ export default function SubmitWebsitePage() {
               </h1>
               <p className="text-sm text-[#6B7280]">
                 Add your site to Aflino&apos;s curated index.
-                {!identity && (
-                  <>
-                    {" "}
-                    <Link
-                      to="/register"
-                      className="text-[#006AFF] hover:underline"
-                    >
-                      Sign in
-                    </Link>{" "}
-                    to track your submissions.
-                  </>
-                )}
               </p>
             </div>
 

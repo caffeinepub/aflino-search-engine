@@ -38,7 +38,6 @@ import { toast } from "sonner";
 import type { Campaign, Website } from "../backend.d";
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useApplyForAdvertiser,
   useCreateCampaign,
@@ -652,7 +651,6 @@ export default function OwnerDashboardPage() {
   const navigate = useNavigate();
   const auth = useAuth();
   const userEmail = auth.user;
-  const { identity } = useInternetIdentity();
   const { data: role } = useGetCallerRole();
 
   const [activeTab, setActiveTab] = useState<SidebarTab>("my-websites");
@@ -1304,16 +1302,6 @@ export default function OwnerDashboardPage() {
                   </p>
                   <p className="text-sm font-medium">{userEmail ?? "—"}</p>
                 </div>
-                {identity && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                      Principal
-                    </p>
-                    <code className="text-sm font-mono break-all">
-                      {identity.getPrincipal().toString()}
-                    </code>
-                  </div>
-                )}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
                     Role

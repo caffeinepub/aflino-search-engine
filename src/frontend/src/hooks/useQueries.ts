@@ -654,9 +654,9 @@ export function useGetCrawlQueue() {
   return useQuery({
     queryKey: ["crawlQueue"],
     queryFn: async () => {
-      if (!actor) return [] as bigint[];
+      if (!actor) return [] as [bigint, bigint][];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (actor as any).getCrawlQueue() as Promise<bigint[]>;
+      return (actor as any).getCrawlQueue() as Promise<[bigint, bigint][]>;
     },
     enabled: !!actor,
   });
@@ -687,6 +687,21 @@ export function useAddToCrawlQueue() {
       if (!actor) throw new Error("Not connected");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (actor as any).addToCrawlQueue(websiteId) as Promise<void>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["crawlQueue"] });
+    },
+  });
+}
+
+export function useCheckAndQueueRecrawl() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).checkAndQueueRecrawl() as Promise<bigint>;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["crawlQueue"] });

@@ -14,7 +14,6 @@ import {
 import { motion } from "motion/react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetCallerRole } from "../hooks/useQueries";
 import { sanitizeText, validateSearchQuery } from "../utils/security";
 
@@ -206,7 +205,6 @@ export default function HomePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { identity, clear } = useInternetIdentity();
   const { data: role } = useGetCallerRole();
   const {
     isAuthenticated: isLocalAuth,
@@ -259,7 +257,6 @@ export default function HomePage() {
 
   const handleAdminLogout = () => {
     authLogout();
-    clear();
     closeMenu();
   };
 
@@ -434,8 +431,8 @@ export default function HomePage() {
             </Link>
           )}
 
-          {/* My Dashboard (for Internet Identity users) */}
-          {!!identity && !isAdmin && (
+          {/* My Dashboard (for logged-in users) */}
+          {isUserLoggedIn && !isAdmin && (
             <Link
               to="/dashboard"
               onClick={closeMenu}
@@ -484,19 +481,6 @@ export default function HomePage() {
           )}
 
           {/* Internet Identity Sign Out (non-admin ICP users) */}
-          {!!identity && !isAdmin && (
-            <button
-              type="button"
-              onClick={() => {
-                clear();
-                closeMenu();
-              }}
-              className="px-4 py-2 text-sm text-[#9CA3AF] hover:text-[#374151] transition-colors text-left"
-              data-ocid="menu.logout.button"
-            >
-              Sign Out
-            </button>
-          )}
         </nav>
       </div>
 

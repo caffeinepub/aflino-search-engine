@@ -67,13 +67,13 @@ import type {
 
 import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAddAdvertiserBalance,
   useAddToBlacklist,
   useApproveAdvertiser,
   useApproveWebsite,
   useAssignRole,
+  useCheckAndQueueRecrawl,
   useDeleteWebsite,
   useEditWebsite,
   useGetAdsEnabled,
@@ -516,6 +516,7 @@ function WebsitesSection() {
   const importMutation = useImportSeedData();
   const cleanupMutation = useRunOwnershipCleanup();
   const crawlerMutation = useRunCrawler();
+  const recrawlMutation = useCheckAndQueueRecrawl();
   const { data: crawlQueue = [] } = useGetCrawlQueue();
 
   const handleRunCrawler = async () => {
@@ -532,6 +533,17 @@ function WebsitesSection() {
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Crawler failed");
+    }
+  };
+
+  const handleCheckRecrawl = async () => {
+    try {
+      const count = await recrawlMutation.mutateAsync();
+      toast.success(
+        `${count.toString()} site(s) queued for re-crawl based on smart scheduling.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Re-crawl check failed");
     }
   };
 
@@ -673,7 +685,27 @@ function WebsitesSection() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleCheckRecrawl()}
+              disabled={recrawlMutation.isPending}
+              className="gap-1.5 text-green-700 border-green-300 hover:bg-green-50"
+              title="Checks all approved websites and queues those due for re-crawl based on smart scheduling (New=6h, Active=24h, Low Activity=7 days)"
+            >
+              {recrawlMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Checking…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Check &amp; Queue Re-crawl
+                </>
+              )}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -716,9 +748,9 @@ function WebsitesSection() {
               )}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground max-w-[260px] text-right">
-            Crawler fetches queued sites &amp; updates the index. Cleanup marks
-            expired sites.
+          <p className="text-xs text-muted-foreground max-w-[300px] text-right">
+            Smart scheduling: New=6h (🔴100), Active=24h (🟡70), Low=7d (🟢30).
+            {crawlQueue.length > 0 && ` Queue: ${crawlQueue.length} site(s).`}
           </p>
         </div>
       </div>
@@ -3575,7 +3607,6 @@ function SidebarContent({
 
 export default function AdminPanelPage() {
   const navigate = useNavigate();
-  const { clear } = useInternetIdentity();
   const { data: stats } = useGetStats();
   const { role: authRole, logout: authLogout } = useAuth();
 
@@ -3598,7 +3629,6 @@ export default function AdminPanelPage() {
 
   const handleSignOut = () => {
     authLogout();
-    if (clear) clear();
     void navigate({ to: "/" });
   };
 
