@@ -8,6 +8,7 @@ import {
   Menu,
   Search,
   Share2,
+  Sparkles,
   Sun,
   TrendingUp,
   User,
@@ -39,6 +40,7 @@ interface DiscoverFeed {
   trending: Website[];
   recentlyIndexed: Website[];
   popularDomains: Website[];
+  recommendedForYou: Website[];
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -57,6 +59,8 @@ const TRENDING_ITEMS = [
   "How to build a website",
   "Open source software",
 ] as const;
+
+const CARDS_INITIAL = 6;
 
 function getWeatherEmoji(code: number): string {
   if (code === 0) return "☀️";
@@ -212,23 +216,23 @@ function WeatherCard() {
   );
 }
 
-// ── WebsiteCard component ─────────────────────────────────────────────────────
+// ── WebsiteCard (grid layout) ─────────────────────────────────────────────────
 
 function WebsiteCard({ site }: { site: Website }) {
   return (
     <button
       type="button"
       onClick={() => window.open(site.url, "_blank", "noopener,noreferrer")}
-      className="flex-shrink-0 w-48 bg-white rounded-xl border border-[#E5E7EB] shadow-sm p-3 text-left hover:border-[#006AFF] hover:shadow-md transition-all group"
+      className="bg-white rounded-xl border border-[#E5E7EB] shadow-sm p-4 text-left hover:border-[#006AFF] hover:shadow-md transition-all group w-full"
       data-ocid="discover.feed.item"
     >
-      <div className="flex items-start justify-between gap-1 mb-1">
-        <p className="text-sm font-semibold text-[#111827] truncate leading-tight flex-1">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <p className="text-sm font-semibold text-[#111827] line-clamp-1 leading-snug flex-1">
           {site.title}
         </p>
-        <ExternalLink className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#006AFF] flex-shrink-0 mt-0.5 transition-colors" />
+        <ExternalLink className="h-3.5 w-3.5 text-[#9CA3AF] group-hover:text-[#006AFF] flex-shrink-0 mt-0.5 transition-colors" />
       </div>
-      <p className="text-xs text-[#9CA3AF] truncate mb-1.5">
+      <p className="text-xs text-[#006AFF] truncate mb-2 font-medium">
         {getDomain(site.url)}
       </p>
       {site.description && (
@@ -240,14 +244,14 @@ function WebsiteCard({ site }: { site: Website }) {
   );
 }
 
-// ── Skeleton card ─────────────────────────────────────────────────────────────
+// ── Skeleton card (grid) ──────────────────────────────────────────────────────
 
 function WebsiteCardSkeleton() {
   return (
-    <div className="flex-shrink-0 w-48 bg-white rounded-xl border border-[#E5E7EB] p-3 animate-pulse">
+    <div className="bg-white rounded-xl border border-[#E5E7EB] p-4 animate-pulse w-full">
       <div className="h-3.5 bg-[#F3F4F6] rounded w-3/4 mb-2" />
-      <div className="h-2.5 bg-[#F3F4F6] rounded w-1/2 mb-2" />
-      <div className="h-2 bg-[#F3F4F6] rounded w-full mb-1" />
+      <div className="h-2.5 bg-[#F3F4F6] rounded w-1/3 mb-3" />
+      <div className="h-2 bg-[#F3F4F6] rounded w-full mb-1.5" />
       <div className="h-2 bg-[#F3F4F6] rounded w-2/3" />
     </div>
   );
@@ -257,43 +261,65 @@ function WebsiteCardSkeleton() {
 
 function DiscoverFeedSection({
   title,
-  emoji,
+  icon,
   sites,
   isLoading,
   ocid,
 }: {
   title: string;
-  emoji: string;
+  icon: React.ReactNode;
   sites: Website[];
   isLoading: boolean;
   ocid: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (!isLoading && sites.length === 0) return null;
+
+  const displayed = expanded ? sites : sites.slice(0, CARDS_INITIAL);
+  const hasMore = sites.length > CARDS_INITIAL;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="w-full mb-6"
+      className="w-full mb-8"
       data-ocid={ocid}
     >
-      <h3 className="font-semibold text-base text-[#111827] mb-3">
-        {emoji} {title}
-      </h3>
-      <div
-        className="flex gap-3 overflow-x-auto pb-2"
-        style={{ scrollbarWidth: "none" }}
-      >
+      {/* Section header */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[#006AFF]">{icon}</span>
+        <h3 className="font-semibold text-base text-[#111827]">{title}</h3>
+      </div>
+
+      {/* Card grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {isLoading
-          ? Array.from({ length: 4 }).map((_, i) => (
+          ? Array.from({ length: CARDS_INITIAL }).map((_, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders
               <WebsiteCardSkeleton key={i} />
             ))
-          : sites.map((site, i) => (
+          : displayed.map((site, i) => (
               <WebsiteCard key={String(site.id ?? i)} site={site} />
             ))}
       </div>
+
+      {/* View More / View Less */}
+      {!isLoading && hasMore && (
+        <div className="flex justify-center mt-4">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="px-5 py-2 rounded-full border border-[#006AFF] text-[#006AFF] text-sm font-medium hover:bg-[#006AFF] hover:text-white transition-colors"
+            data-ocid={`${ocid}.view_more_button`}
+          >
+            {expanded
+              ? "View Less"
+              : `View More (${sites.length - CARDS_INITIAL} more)`}
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -319,6 +345,7 @@ export default function HomePage() {
 
   const isAdmin = authRole === "admin" || role === "admin";
   const isUserLoggedIn = isLocalAuth && authRole === "user";
+  const userEmail = isLocalAuth && authRole === "user" ? authUser : null;
 
   const headerLogoUrl =
     typeof localStorage !== "undefined"
@@ -332,16 +359,29 @@ export default function HomePage() {
   // ── Discover Feed ──────────────────────────────────────────────────────────
   const { data: discoverFeed, isLoading: feedLoading } = useQuery<DiscoverFeed>(
     {
-      queryKey: ["discoverFeed"],
+      queryKey: ["discoverFeed", userEmail],
       queryFn: async () => {
         if (!actor)
-          return { trending: [], recentlyIndexed: [], popularDomains: [] };
+          return {
+            trending: [],
+            recentlyIndexed: [],
+            popularDomains: [],
+            recommendedForYou: [],
+          };
         try {
+          const emailOpt: [string] | [] = userEmail ? [userEmail] : [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (await (actor as any).getDiscoverFeed()) as DiscoverFeed;
+          return (await (actor as any).getDiscoverFeed(
+            emailOpt,
+          )) as DiscoverFeed;
         } catch (err) {
           console.error("[DiscoverFeed] Failed to load:", err);
-          return { trending: [], recentlyIndexed: [], popularDomains: [] };
+          return {
+            trending: [],
+            recentlyIndexed: [],
+            popularDomains: [],
+            recommendedForYou: [],
+          };
         }
       },
       enabled: !!actor && !actorFetching,
@@ -350,10 +390,12 @@ export default function HomePage() {
   );
 
   const trending = discoverFeed?.trending ?? [];
+  const recommendedForYou = discoverFeed?.recommendedForYou ?? [];
   const recentlyIndexed = discoverFeed?.recentlyIndexed ?? [];
   const popularDomains = discoverFeed?.popularDomains ?? [];
   const hasFeedData =
     trending.length > 0 ||
+    recommendedForYou.length > 0 ||
     recentlyIndexed.length > 0 ||
     popularDomains.length > 0;
   const showFeedSkeletons = feedLoading && !discoverFeed;
@@ -605,82 +647,93 @@ export default function HomePage() {
           initial={{ opacity: 0, y: -16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="flex flex-col items-center w-full max-w-xl"
+          className="flex flex-col items-center w-full max-w-5xl"
         >
-          {/* ── Pill Search Bar ── */}
-          <div
-            className={`relative flex items-center w-full bg-white rounded-full border transition-all ${
-              focused
-                ? "border-[#006AFF] shadow-[0_0_0_3px_rgba(0,106,255,0.12)]"
-                : "border-[#E5E7EB] shadow-[0_1px_6px_rgba(0,0,0,0.07)]"
-            }`}
-            style={{ height: "52px" }}
-          >
-            <div className="pl-3 flex-shrink-0">
-              {searchBarIconUrl ? (
-                <img
-                  src={searchBarIconUrl}
-                  alt=""
-                  className="h-6 w-6 object-contain flex-shrink-0"
-                />
-              ) : (
-                <img
-                  src="/assets/generated/aflino-logo-icon-transparent.dim_64x64.png"
-                  alt=""
-                  className="h-6 w-6 object-contain flex-shrink-0"
-                />
-              )}
+          {/* ── Search bar (centred, max-w-xl) ── */}
+          <div className="w-full max-w-xl flex flex-col items-center">
+            <div
+              className={`relative flex items-center w-full bg-white rounded-full border transition-all ${
+                focused
+                  ? "border-[#006AFF] shadow-[0_0_0_3px_rgba(0,106,255,0.12)]"
+                  : "border-[#E5E7EB] shadow-[0_1px_6px_rgba(0,0,0,0.07)]"
+              }`}
+              style={{ height: "52px" }}
+            >
+              <div className="pl-3 flex-shrink-0">
+                {searchBarIconUrl ? (
+                  <img
+                    src={searchBarIconUrl}
+                    alt=""
+                    className="h-6 w-6 object-contain flex-shrink-0"
+                  />
+                ) : (
+                  <img
+                    src="/assets/generated/aflino-logo-icon-transparent.dim_64x64.png"
+                    alt=""
+                    className="h-6 w-6 object-contain flex-shrink-0"
+                  />
+                )}
+              </div>
+
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder="Aflino Search..."
+                className="flex-1 px-3 bg-transparent outline-none text-[#111827] placeholder:text-[#9CA3AF] text-base h-full"
+                data-ocid="home.search.input"
+              />
+
+              <button
+                type="button"
+                onClick={() => handleSearch()}
+                className="flex items-center justify-center h-9 w-9 rounded-full bg-[#006AFF] hover:bg-[#0052CC] text-white transition-colors flex-shrink-0 mr-1.5"
+                aria-label="Search"
+                data-ocid="home.search.button"
+              >
+                <Search className="h-4 w-4" />
+              </button>
             </div>
 
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              placeholder="Aflino Search..."
-              className="flex-1 px-3 bg-transparent outline-none text-[#111827] placeholder:text-[#9CA3AF] text-base h-full"
-              data-ocid="home.search.input"
-            />
-
-            <button
-              type="button"
-              onClick={() => handleSearch()}
-              className="flex items-center justify-center h-9 w-9 rounded-full bg-[#006AFF] hover:bg-[#0052CC] text-white transition-colors flex-shrink-0 mr-1.5"
-              aria-label="Search"
-              data-ocid="home.search.button"
-            >
-              <Search className="h-4 w-4" />
-            </button>
+            {/* Trust line */}
+            <p className="text-xs text-[#6B7280] mt-2 mb-8 text-center">
+              ✔ Verified Websites Only &bull; 🔒 Safe &amp; Secure Search
+            </p>
           </div>
 
-          {/* Trust line */}
-          <p className="text-xs text-[#6B7280] mt-2 mb-6 text-center">
-            ✔ Verified Websites Only &bull; 🔒 Safe &amp; Secure Search
-          </p>
-
-          {/* ── Live Discover Feed (from backend) ── */}
+          {/* ── Live Discover Feed sections ── */}
           {(showFeedSkeletons || hasFeedData) && (
-            <div className="w-full mb-2" data-ocid="discover.feed.section">
+            <div className="w-full" data-ocid="discover.feed.section">
               <DiscoverFeedSection
                 title="Trending"
-                emoji="🔥"
+                icon={<TrendingUp className="h-4 w-4" />}
                 sites={trending}
                 isLoading={showFeedSkeletons}
                 ocid="discover.trending.section"
               />
+              {(showFeedSkeletons || recommendedForYou.length > 0) && (
+                <DiscoverFeedSection
+                  title="Recommended For You"
+                  icon={<Sparkles className="h-4 w-4" />}
+                  sites={recommendedForYou}
+                  isLoading={showFeedSkeletons}
+                  ocid="discover.recommended.section"
+                />
+              )}
               <DiscoverFeedSection
                 title="Recently Indexed"
-                emoji="🆕"
+                icon={<Search className="h-4 w-4" />}
                 sites={recentlyIndexed}
                 isLoading={showFeedSkeletons}
                 ocid="discover.recently_indexed.section"
               />
               <DiscoverFeedSection
                 title="Popular Domains"
-                emoji="🌐"
+                icon={<span className="text-sm">🌐</span>}
                 sites={popularDomains}
                 isLoading={showFeedSkeletons}
                 ocid="discover.popular_domains.section"
@@ -689,7 +742,7 @@ export default function HomePage() {
           )}
 
           {/* ── Static Discover Section ── */}
-          <div className="w-full">
+          <div className="w-full mt-4">
             <h2 className="font-semibold text-base text-[#111827] mb-4">
               Discover
             </h2>
