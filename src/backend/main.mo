@@ -872,7 +872,17 @@ actor {
   // ─── Search (Algorithm-Based Ranking) ─────────────────────────────────────
 
   public query func searchWebsites(searchQuery : Text, emailOpt : ?Text) : async [Website] {
-    ignore emailOpt; // future: personalization based on click history
+    // ── Resolve user interests for personalization ───────────────────────
+    let userInterestKeywords : [Text] = switch (emailOpt) {
+      case (null) { [] };
+      case (?email) {
+        var found : [Text] = [];
+        for (entry in userInterests.vals()) {
+          if (entry.0 == email) { found := entry.1 };
+        };
+        found
+      };
+    };
     let trimmed = searchQuery.trim(#char ' ');
     if (trimmed.size() == 0) { return [] };
     if (trimmed.size() > 200) { return [] };
@@ -1000,6 +1010,28 @@ actor {
       // ── Spam penalty (-30 if keyword stuffing detected) ───────────────────
       if (isSpammy(site.title, site.description, site.keywords)) {
         score -= 30;
+      };
+
+      // ── Interest-based personalization ────────────────────────────────────
+      if (userInterestKeywords.size() > 0) {
+        var matchCount : Nat = 0;
+        for (interestKw in userInterestKeywords.vals()) {
+          if (interestKw.size() > 0) {
+            let ikwLower = interestKw.toLower();
+            for (siteKw in site.keywords.vals()) {
+              if (siteKw.toLower() == ikwLower) {
+                matchCount += 1;
+              };
+            };
+          };
+        };
+        if (matchCount >= 3) {
+          // Strong match: 3 or more interest keywords match site keywords
+          score += 25;
+        } else if (matchCount >= 1) {
+          // Match: at least 1 interest keyword matches
+          score += 15;
+        };
       };
 
       // ── Admin boost ────────────────────────────────────────────────────────
