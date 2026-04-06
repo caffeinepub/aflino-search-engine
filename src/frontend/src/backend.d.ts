@@ -60,6 +60,9 @@ export interface Website {
     verificationExpiryAt?: bigint;
     ownerHistory: Array<string>;
     adminBoost: bigint;
+    // V5 Analytics
+    clicks: bigint;
+    impressions: bigint;
 }
 export interface http_header {
     value: string;
@@ -116,6 +119,13 @@ export interface SeedEntry {
     description: string;
     keywords: Array<string>;
 }
+export interface DiscoverFeed {
+    trending: Array<Website>;
+    recentlyIndexed: Array<Website>;
+    popularDomains: Array<Website>;
+    recommendedForYou: Array<Website>;
+}
+
 export enum BlacklistStatus {
     blocked = "blocked",
     flagged = "flagged"
@@ -190,6 +200,7 @@ export interface backendInterface {
     reclaimDomain(websiteId: bigint, newOwnerEmail: string): Promise<Website>;
     recordAdClick(campaignId: bigint, userSession: string): Promise<Result>;
     recordAdImpression(campaignId: bigint): Promise<void>;
+    getDiscoverFeed(emailOpt: [string] | []): Promise<DiscoverFeed>;
     recordClick(url: string): Promise<void>;
     rejectAdvertiser(email: string): Promise<void>;
     rejectWebsite(websiteId: bigint): Promise<Website>;

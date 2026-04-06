@@ -2657,4 +2657,147 @@ actor {
     []
   };
 
+  // ─── Discover Feed ────────────────────────────────────────────────────────
+
+  public type DiscoverFeed = {
+    trending          : [Website];
+    recentlyIndexed   : [Website];
+    popularDomains    : [Website];
+    recommendedForYou : [Website];
+  };
+
+  public query func getDiscoverFeed(emailOpt : ?Text) : async DiscoverFeed {
+    // ── Eligibility filter (same as searchWebsites) ──────────────────────────
+    let eligible = websitesV5.filter(func(w : Website) : Bool {
+      if (w.status != #approved) return false;
+      if (w.isSeed) return true;
+      switch (w.verificationStatus) {
+        case (#verified) {
+          switch (w.ownershipStatus) {
+            case (#expired) false;
+            case (_) true;
+          };
+        };
+        case (_) false;
+      };
+    });
+
+    // ── Trending: weighted by clicks with threshold multipliers ──────────────
+    // Thresholds: 500+ x3, 100-499 x2, 50-99 x1.5, <50 x1
+    // Use Array.tabulate to build scored pairs — avoids tuple return type inference issue
+    let trendingCount = eligible.size();
+    let trendingScores : [Int] = Array.tabulate<Int>(trendingCount, func(i : Nat) : Int {
+      let c : Int = eligible[i].clicks;
+      if (c >= 500) { c * 3 }
+      else if (c >= 100) { c * 2 }
+      else if (c >= 50)  { (c * 3) / 2 }
+      else               { c }
+    });
+    var trendingIdx : [Nat] = Array.tabulate(trendingCount, func(i : Nat) : Nat { i });
+    let trendingSorted = trendingIdx.sort(func(a : Nat, b : Nat) : { #less; #equal; #greater } {
+      let sa = trendingScores[a];
+      let sb = trendingScores[b];
+      if (sa > sb) #less else if (sa < sb) #greater else #equal
+    });
+    let trending : [Website] = Array.tabulate(
+      if (trendingSorted.size() < 10) trendingSorted.size() else 10,
+      func(i : Nat) : Website { eligible[trendingSorted[i]] }
+    );
+
+    // ── Recently Indexed: sort by approvedAt descending ──────────────────────
+    var recentIdx : [Nat] = Array.tabulate(eligible.size(), func(i : Nat) : Nat { i });
+    let recentSorted = recentIdx.sort(func(a : Nat, b : Nat) : { #less; #equal; #greater } {
+      let ta : Int = switch (eligible[a].approvedAt) { case (?t) t; case (null) 0 };
+      let tb : Int = switch (eligible[b].approvedAt) { case (?t) t; case (null) 0 };
+      if (ta > tb) #less else if (ta < tb) #greater else #equal
+    });
+    let recentlyIndexed : [Website] = Array.tabulate(
+      if (recentSorted.size() < 10) recentSorted.size() else 10,
+      func(i : Nat) : Website { eligible[recentSorted[i]] }
+    );
+
+    // ── Popular Domains: deduplicate by domain, sort by clicks desc ──────────
+    var domainArr   : [var Text]    = [var];
+    var domainSites : [var Website] = [var];
+    var domainCount : Nat = 0;
+
+    for (site in eligible.vals()) {
+      let domain = extractDomain(site.url);
+      var found = false;
+      var foundIdx = 0;
+      var i = 0;
+      while (i < domainCount) {
+        if (domainArr[i] == domain) { found := true; foundIdx := i };
+        i += 1;
+      };
+      if (not found) {
+        let newDomains = Array.tabulate(domainCount + 1, func(j : Nat) : Text    { if (j < domainCount) domainArr[j]   else domain });
+        let newSites   = Array.tabulate(domainCount + 1, func(j : Nat) : Website { if (j < domainCount) domainSites[j] else site });
+        domainArr   := newDomains.toVarArray();
+        domainSites := newSites.toVarArray();
+        domainCount += 1;
+      } else {
+        if (site.clicks > domainSites[foundIdx].clicks) {
+          domainSites[foundIdx] := site;
+        };
+      };
+    };
+    let allDomainSites : [Website] = Array.tabulate(domainCount, func(i : Nat) : Website { domainSites[i] });
+    var popIdx : [Nat] = Array.tabulate(domainCount, func(i : Nat) : Nat { i });
+    let popSorted = popIdx.sort(func(a : Nat, b : Nat) : { #less; #equal; #greater } {
+      let ca : Int = allDomainSites[a].clicks;
+      let cb : Int = allDomainSites[b].clicks;
+      if (ca > cb) #less else if (ca < cb) #greater else #equal
+    });
+    let popularDomains : [Website] = Array.tabulate(
+      if (popSorted.size() < 10) popSorted.size() else 10,
+      func(i : Nat) : Website { allDomainSites[popSorted[i]] }
+    );
+
+    // ── Recommended For You: interest-matched + clicks ────────────────────────
+    let recommendedForYou : [Website] = switch (emailOpt) {
+      case (null) { [] };
+      case (?email) {
+        var interests : [Text] = [];
+        for (entry in userInterests.vals()) {
+          if (entry.0 == email) { interests := entry.1 };
+        };
+        if (interests.size() == 0) { [] } else {
+          type ScoredSite = { site : Website; score : Int };
+          var scored : [ScoredSite] = [];
+          for (site in eligible.vals()) {
+            var matchCount : Nat = 0;
+            for (interestKw in interests.vals()) {
+              if (interestKw.size() > 0) {
+                let ikwLower = interestKw.toLower();
+                for (siteKw in site.keywords.vals()) {
+                  if (siteKw.toLower() == ikwLower) {
+                    matchCount += 1;
+                  };
+                };
+              };
+            };
+            if (matchCount >= 1) {
+              let sc : Int = (matchCount * 20) + site.clicks;
+              scored := scored.concat([{ site; score = sc }]);
+            };
+          };
+          var recIdx : [Nat] = Array.tabulate(scored.size(), func(i : Nat) : Nat { i });
+          let recSorted = recIdx.sort(func(a : Nat, b : Nat) : { #less; #equal; #greater } {
+            if (scored[a].score > scored[b].score) #less
+            else if (scored[a].score < scored[b].score) #greater
+            else #equal
+          });
+          Array.tabulate(
+            if (recSorted.size() < 10) recSorted.size() else 10,
+            func(i : Nat) : Website { scored[recSorted[i]].site }
+          )
+        }
+      };
+    };
+
+    { trending; recentlyIndexed; popularDomains; recommendedForYou }
+  };
+
+
 };

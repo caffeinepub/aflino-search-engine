@@ -242,6 +242,7 @@ export interface backendInterface {
     pauseCampaign(campaignId: bigint): Promise<void>;
     recordAdClick(campaignId: bigint, userSession: string): Promise<Result>;
     recordAdImpression(campaignId: bigint): Promise<void>;
+    getDiscoverFeed(emailOpt: [string] | []): Promise<import("./backend.d").DiscoverFeed>;
     recordClick(url: string): Promise<void>;
     rejectAdvertiser(email: string): Promise<void>;
     rejectWebsite(websiteId: bigint): Promise<Website>;
@@ -989,6 +990,34 @@ export class Backend implements backendInterface {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await (this.actor as any).getUserInterests(arg0);
             return result as string[];
+        }
+    }
+    async getDiscoverFeed(arg0: [string] | []): Promise<import("./backend.d").DiscoverFeed> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).getDiscoverFeed(arg0);
+                const raw = result as { trending: Array<any>; recentlyIndexed: Array<any>; popularDomains: Array<any>; recommendedForYou: Array<any> };
+                return {
+                    trending: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.trending),
+                    recentlyIndexed: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recentlyIndexed),
+                    popularDomains: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.popularDomains),
+                    recommendedForYou: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recommendedForYou),
+                };
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).getDiscoverFeed(arg0);
+            const raw = result as { trending: Array<any>; recentlyIndexed: Array<any>; popularDomains: Array<any>; recommendedForYou: Array<any> };
+            return {
+                trending: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.trending),
+                recentlyIndexed: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recentlyIndexed),
+                popularDomains: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.popularDomains),
+                recommendedForYou: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recommendedForYou),
+            };
         }
     }
 }

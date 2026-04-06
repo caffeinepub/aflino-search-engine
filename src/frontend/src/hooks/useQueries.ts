@@ -4,6 +4,7 @@ import type {
   AdvertiserProfile,
   BlacklistEntry,
   Campaign,
+  DiscoverFeed,
   SecurityLog,
   SeedEntry,
   Variant_remove_approve_block,
@@ -367,10 +368,34 @@ export function useReviewFlaggedDomain() {
 
 export function useRecordClick() {
   const { actor } = useActor();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (url: string) => {
       if (!actor) return;
       await actor.recordClick(url);
+    },
+    onSuccess: async (_data, url) => {
+      // Threshold-based discover feed invalidation (Option B)
+      // We don't have the exact click count here, so invalidate on every click
+      // but React Query's staleTime (5 min) will prevent unnecessary refetches
+      // unless the data is actually stale.
+      // For precise threshold enforcement, fetch the site's click count:
+      try {
+        const allSites = queryClient.getQueryData<Website[]>(["allWebsites"]);
+        const site = allSites?.find((s) => s.url === url);
+        if (site) {
+          const newClicks = Number(site.clicks) + 1;
+          // Invalidate discover feed at thresholds: 50, 100, 500
+          if (newClicks === 50 || newClicks === 100 || newClicks === 500) {
+            void queryClient.invalidateQueries({ queryKey: ["discoverFeed"] });
+          }
+        } else {
+          // Unknown site — safe to invalidate discover feed (staleTime guards refetch)
+          void queryClient.invalidateQueries({ queryKey: ["discoverFeed"] });
+        }
+      } catch {
+        // Non-critical: ignore errors in threshold check
+      }
     },
   });
 }
@@ -786,5 +811,32 @@ export function useRefreshUserInterests() {
       if (!actor) return;
       await actor.refreshUserInterests(data.email);
     },
+  });
+}
+
+// ── Discover Feed ─────────────────────────────────────────────────────────────
+
+export function useGetDiscoverFeed(email?: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<DiscoverFeed>({
+    queryKey: ["discoverFeed", email ?? "guest"],
+    queryFn: async () => {
+      const empty: DiscoverFeed = {
+        trending: [],
+        recentlyIndexed: [],
+        popularDomains: [],
+        recommendedForYou: [],
+      };
+      if (!actor) return empty;
+      try {
+        const emailOpt: [string] | [] = email ? [email] : [];
+        return await actor.getDiscoverFeed(emailOpt);
+      } catch (err) {
+        console.error("[DiscoverFeed] Failed to load:", err);
+        return empty;
+      }
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: 5 * 60 * 1000, // 5 minutes — React Query refresh strategy (Option B)
   });
 }

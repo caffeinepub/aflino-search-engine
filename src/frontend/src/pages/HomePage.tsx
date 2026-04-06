@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Bookmark,
@@ -18,8 +17,7 @@ import { motion } from "motion/react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { Website } from "../backend.d";
 import { useAuth } from "../context/AuthContext";
-import { useActor } from "../hooks/useActor";
-import { useGetCallerRole } from "../hooks/useQueries";
+import { useGetCallerRole, useGetDiscoverFeed } from "../hooks/useQueries";
 import { sanitizeText, validateSearchQuery } from "../utils/security";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,13 +33,6 @@ type WeatherState =
   | { status: "loading" }
   | { status: "success"; data: WeatherData }
   | { status: "error"; message: string };
-
-interface DiscoverFeed {
-  trending: Website[];
-  recentlyIndexed: Website[];
-  popularDomains: Website[];
-  recommendedForYou: Website[];
-}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -341,7 +332,6 @@ export default function HomePage() {
     user: authUser,
     logout: authLogout,
   } = useAuth();
-  const { actor, isFetching: actorFetching } = useActor();
 
   const isAdmin = authRole === "admin" || role === "admin";
   const isUserLoggedIn = isLocalAuth && authRole === "user";
@@ -357,37 +347,8 @@ export default function HomePage() {
       : "";
 
   // ── Discover Feed ──────────────────────────────────────────────────────────
-  const { data: discoverFeed, isLoading: feedLoading } = useQuery<DiscoverFeed>(
-    {
-      queryKey: ["discoverFeed", userEmail],
-      queryFn: async () => {
-        if (!actor)
-          return {
-            trending: [],
-            recentlyIndexed: [],
-            popularDomains: [],
-            recommendedForYou: [],
-          };
-        try {
-          const emailOpt: [string] | [] = userEmail ? [userEmail] : [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (await (actor as any).getDiscoverFeed(
-            emailOpt,
-          )) as DiscoverFeed;
-        } catch (err) {
-          console.error("[DiscoverFeed] Failed to load:", err);
-          return {
-            trending: [],
-            recentlyIndexed: [],
-            popularDomains: [],
-            recommendedForYou: [],
-          };
-        }
-      },
-      enabled: !!actor && !actorFetching,
-      staleTime: 5 * 60 * 1000,
-    },
-  );
+  const { data: discoverFeed, isLoading: feedLoading } =
+    useGetDiscoverFeed(userEmail);
 
   const trending = discoverFeed?.trending ?? [];
   const recommendedForYou = discoverFeed?.recommendedForYou ?? [];
