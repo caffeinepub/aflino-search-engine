@@ -1,42 +1,38 @@
 # Aflino Search Engine
 
 ## Current State
-
-The crawler system uses a flat `crawlQueue: [Nat]` (array of websiteIds). `runCrawler()` is admin-triggered and processes the queue in order with no priority. There is no `checkAndQueueRecrawl()` function. The `requestIndexing()` function adds websiteIds to the queue without any priority assignment.
+The Website model stores clicks and impressions as external `[(Text, Nat)]` arrays (`clickCounts`, `impressionCounts`) keyed by URL. `recordClick(url)` and `recordImpression(url)` mutate these arrays. Ranking reads them via `getClicks(url)` and `getImpressions(url)` helper functions. This creates a split source of truth.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `CrawlPriority` constants: New=100, Active=70, LowActivity=30
-- `crawlQueueV2: [(Nat, Nat)]` stable var (priority, websiteId) replaces old flat queue
-- `checkAndQueueRecrawl()` admin-only function: iterates all websites, computes crawl category (New/Active/LowActivity), compares `lastCrawledAt` against interval threshold, enqueues due websites with appropriate priority
-- Helper `getCrawlPriority(site)` to classify New/Active/LowActivity and return priority value
-- Helper `isDueCrawl(site, now)` to check if site needs re-crawl based on category interval
-- `getCrawlQueueV2()` admin query returning `[(Nat, Nat)]`
+- `clicks : Nat` and `impressions : Nat` fields on the `Website` type
+- `WebsiteV4Legacy` type (old Website shape, used as migration source)
+- `websitesV4Legacy` stable var (renamed from `websitesV4`)
+- `websitesV5` stable var (new live array)
+- `migrateV4toV5()` migration function: maps `clickCounts[url]` → `website.clicks`, `impressionCounts[url]` → `website.impressions` (defaults to 0 if not found)
+- V5 step in `postupgrade`
 
 ### Modify
-- `crawlQueue: [Nat]` replaced by `crawlQueueV2: [(Nat, Nat)]`
-- `requestIndexing()`: when adding to queue, compute priority via `getCrawlPriority()` and insert sorted by priority descending
-- `addToCrawlQueue()`: same priority logic
-- `runCrawler()`: process from `crawlQueueV2`, sorted highest-priority first
-- `getCrawlQueue()`: now returns `[(Nat, Nat)]` (renamed to `getCrawlQueueV2`)
-- Migration: existing `crawlQueue: [Nat]` entries converted to `(70, websiteId)` (default Active priority) in `postupgrade()`
-- Frontend `AdminPanelPage`: add "Check & Queue Re-crawl" button alongside "Run Crawler"
+- `recordClick(url)`: now increments `website.clicks` directly via `websitesV5.map()`
+- `recordImpression(url)`: now increments `website.impressions` directly via `websitesV5.map()`
+- `searchWebsites`: reads `site.clicks` and `site.impressions` instead of calling helper functions
+- `submitWebsite` and `importSeedData`: new Website records include `clicks = 0; impressions = 0;`
+- `getCrawlPriority`: uses `site.clicks` instead of `getClicks(site.url)`
+- `postupgrade` Step 3: now writes into `websitesV4Legacy`
+- `migrateV3toV4`: return type changed to `WebsiteV4Legacy`
 
 ### Remove
-- Old `crawlQueue: [Nat]` stable var (replaced by `crawlQueueV2`)
+- `var clickCounts : [(Text, Nat)]` (kept as empty stable var for upgrade compatibility but no longer written to)
+- `var impressionCounts : [(Text, Nat)]` (same)
+- `getClicks(url)` helper function
+- `getImpressions(url)` helper function
 
 ## Implementation Plan
-
-1. In `main.mo`:
-   - Add `crawlQueueV2: [(Nat, Nat)]` stable var
-   - Add classification helpers: `getCrawlPriority()` and `isDueCrawl()`
-   - Add `checkAndQueueRecrawl()` admin function
-   - Update `requestIndexing()`, `addToCrawlQueue()`, `runCrawler()` to use `crawlQueueV2`
-   - Add `postupgrade()` migration: migrate existing `crawlQueue` entries to `crawlQueueV2` with priority 70
-   - Add `getCrawlQueueV2()` query
-
-2. In `AdminPanelPage.tsx`:
-   - Add `useCheckAndQueueRecrawl` mutation hook
-   - Add "Check & Queue Re-crawl" button with loading state and success/error toast
-   - Update queue display to show priority alongside websiteId
+1. Extend `Website` type with `clicks` and `impressions` fields
+2. Add `WebsiteV4Legacy` type matching old shape
+3. Rename `websitesV4` → `websitesV4Legacy`, add `websitesV5` as new live array
+4. Add `migrateV4toV5` function
+5. Update `postupgrade` chain: V3→V4 writes into `websitesV4Legacy`; new V5 step reads `websitesV4Legacy` + external arrays, populates `websitesV5`
+6. Update `recordClick`, `recordImpression`, ranking, crawler priority, and all Website creation sites
+7. Remove `getClicks`/`getImpressions` helpers

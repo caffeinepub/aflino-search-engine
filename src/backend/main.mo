@@ -94,7 +94,34 @@ actor {
     ownerHistory : [Text];
   };
 
-  // ─── Current Website type (V4) ────────────────────────────────────────────
+  // ─── Legacy type (V4) - used for V5 migration ───────────────────────────
+  type WebsiteV4Legacy = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    ownershipStatus : OwnershipStatus;
+    verificationStatus : VerificationStatus;
+    lastVerifiedAt : ?Int;
+    verificationExpiryAt : ?Int;
+    ownerHistory : [Text];
+    adminBoost : Nat;
+  };
+
+  // ─── Current Website type (V5) ────────────────────────────────────────────
   public type Website = {
     id : Nat;
     url : Text;
@@ -124,6 +151,9 @@ actor {
     ownerHistory : [Text];
     // Ranking boost set by admin
     adminBoost : Nat;
+    // Analytics (V5)
+    clicks : Nat;
+    impressions : Nat;
   };
 
   public type PageStatus = { #pending; #indexed; #error };
@@ -220,8 +250,11 @@ actor {
   // V3 stable var — legacy (migration only)
   var websitesV3 : [WebsiteV3Legacy] = [];
 
-  // V4 stable var — live array used by all runtime logic
-  var websitesV4 : [Website] = [];
+  // V4 stable var — legacy (migration only, renamed for V5 migration)
+  var websitesV4 : [WebsiteV4Legacy] = [];
+
+  // V5 stable var — live array used by all runtime logic
+  var websitesV5 : [Website] = [];
 
   var indexTerms : [(Text, [Nat])] = [];
 
@@ -305,7 +338,7 @@ actor {
   };
 
 
-  func migrateV3toV4(w : WebsiteV3Legacy) : Website {
+  func migrateV3toV4(w : WebsiteV3Legacy) : WebsiteV4Legacy {
     {
       id                  = w.id;
       url                 = w.url;
@@ -333,6 +366,36 @@ actor {
     }
   };
 
+  func migrateV4toV5(w : WebsiteV4Legacy, clicks : Nat, impressions : Nat) : Website {
+    {
+      id                   = w.id;
+      url                  = w.url;
+      title                = w.title;
+      description          = w.description;
+      keywords             = w.keywords;
+      status               = w.status;
+      ownerId              = w.ownerId;
+      ownerPrincipal       = w.ownerPrincipal;
+      verificationToken    = w.verificationToken;
+      isVerified           = w.isVerified;
+      isSeed               = w.isSeed;
+      submittedAt          = w.submittedAt;
+      approvedAt           = w.approvedAt;
+      indexStatus          = w.indexStatus;
+      sitemapUrl           = w.sitemapUrl;
+      lastCheckedAt        = w.lastCheckedAt;
+      lastCrawledAt        = w.lastCrawledAt;
+      ownershipStatus      = w.ownershipStatus;
+      verificationStatus   = w.verificationStatus;
+      lastVerifiedAt       = w.lastVerifiedAt;
+      verificationExpiryAt = w.verificationExpiryAt;
+      ownerHistory         = w.ownerHistory;
+      adminBoost           = w.adminBoost;
+      clicks               = clicks;
+      impressions          = impressions;
+    }
+  };
+
   // Run full migration chain on upgrade
   system func postupgrade() {
     // Step 1: V1 -> V2
@@ -355,6 +418,21 @@ actor {
       crawlQueueV2 := Array.tabulate<(Nat, Nat)>(crawlQueue.size(), func(i : Nat) : (Nat, Nat) { (70, crawlQueue[i]) });
       crawlQueue := [];
     };
+    // Step 5: V4 -> V5 (adds clicks and impressions fields, migrates from external arrays)
+    if (websitesV5.size() == 0 and websitesV4.size() > 0) {
+      websitesV5 := websitesV4.map(func(w : WebsiteV4Legacy) : Website {
+        var clicks : Nat = 0;
+        var impressions : Nat = 0;
+        for ((u, c) in clickCounts.vals()) {
+          if (u == w.url) { clicks := c };
+        };
+        for ((u, c) in impressionCounts.vals()) {
+          if (u == w.url) { impressions := c };
+        };
+        migrateV4toV5(w, clicks, impressions)
+      });
+      websitesV4 := [];
+    };
   };
 
   // ─── Auto-expiry helper ───────────────────────────────────────────────────
@@ -362,7 +440,7 @@ actor {
   // Check if a site's verification has expired (used before critical actions)
   func checkAndExpireSite(siteId : Nat) {
     let now = Time.now();
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == siteId and not w.isSeed) {
         switch (w.verificationExpiryAt) {
           case (?expiry) {
@@ -745,20 +823,7 @@ actor {
     false
   };
 
-  // Get click count for a given URL
-  func getClicks(url : Text) : Nat {
-    for ((u, c) in clickCounts.vals()) {
-      if (u == url) return c;
-    };
-    0
-  };
 
-  func getImpressions(url : Text) : Nat {
-    for ((u, c) in impressionCounts.vals()) {
-      if (u == url) return c;
-    };
-    0
-  };
 
   // ─── Query Intent Classification ─────────────────────────────────────────
 
@@ -803,7 +868,7 @@ actor {
     let thirtyDaysNs : Int = 2_592_000_000_000_000;
 
     // ── 1. Filter eligible sites (approved + active/verified + not expired) ───
-    let eligibleSites = websitesV4.filter(func(w : Website) : Bool {
+    let eligibleSites = websitesV5.filter(func(w : Website) : Bool {
       if (w.status != #approved) return false;
       if (w.isSeed) return true; // seed sites always shown
       switch (w.verificationStatus) {
@@ -898,11 +963,11 @@ actor {
       };
 
       // ── Click popularity: score += log(clicks + 1) * 10 ──────────────────
-      let clicks = getClicks(site.url);
+      let clicks = site.clicks;
       score += logApprox(clicks);
 
       // ── CTR boost: score += (clicks / impressions) * 20 ──────────────────
-      let impressions = getImpressions(site.url);
+      let impressions = site.impressions;
       if (impressions > 0) {
         // Integer math: CTR * 20 = (clicks * 20) / impressions
         score += (clicks * 20) / impressions;
@@ -1010,7 +1075,7 @@ actor {
     let domain = extractDomain(url);
 
     // Ownership-aware duplicate domain check
-    for (site in websitesV4.vals()) {
+    for (site in websitesV5.vals()) {
       if (extractDomain(site.url) == domain and site.status != #rejected) {
         let isActiveAndVerified = switch (site.ownershipStatus) {
           case (#active) {
@@ -1071,14 +1136,16 @@ actor {
       verificationExpiryAt = null;
       ownerHistory = [];
       adminBoost = 0;
+      clicks = 0;
+      impressions = 0;
     };
-    websitesV4 := websitesV4.concat([site]);
+    websitesV5 := websitesV5.concat([site]);
     site
   };
 
   public query ({ caller }) func getMyWebsites() : async [Website] {
     requireRegistered(caller);
-    websitesV4.filter(func(w : Website) : Bool {
+    websitesV5.filter(func(w : Website) : Bool {
       switch (w.ownerPrincipal) {
         case (?p) { p == caller };
         case (null) { false };
@@ -1089,7 +1156,7 @@ actor {
   // Email-based website lookup (V3 primary method)
   public query ({ caller }) func getMyWebsitesByEmail(email : Text) : async [Website] {
     requireRegistered(caller);
-    websitesV4.filter(func(w : Website) : Bool { w.ownerId == email })
+    websitesV5.filter(func(w : Website) : Bool { w.ownerId == email })
   };
 
   // ─── Domain Verification ──────────────────────────────────────────────────
@@ -1097,7 +1164,7 @@ actor {
   public query ({ caller }) func getVerificationToken(websiteId : Nat) : async Text {
     requireRegistered(caller);
     checkAndExpireSite(websiteId);
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1123,7 +1190,7 @@ actor {
     requireRegistered(caller);
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1141,7 +1208,7 @@ actor {
           let verified = body.contains(#text token);
           if (verified) {
             let now = Time.now();
-            websitesV4 := websitesV4.map(func(w : Website) : Website {
+            websitesV5 := websitesV5.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with
                   isVerified = true;
@@ -1171,7 +1238,7 @@ actor {
       Runtime.trap("Invalid email");
     };
 
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         // Only allow reclaim if ownership/verification is expired
@@ -1190,7 +1257,7 @@ actor {
         let _now = Time.now();
         let newHistory = site.ownerHistory.concat([site.ownerId]);
         var updatedSite : ?Website = null;
-        websitesV4 := websitesV4.map(func(w : Website) : Website {
+        websitesV5 := websitesV5.map(func(w : Website) : Website {
           if (w.id == websiteId) {
             let updated = { w with
               ownerId        = newOwnerEmail;
@@ -1223,7 +1290,7 @@ actor {
     requireAdmin(caller);
     let now = Time.now();
     var count = 0;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.isSeed) {
         // Seed sites bypass expiry system
         w
@@ -1254,7 +1321,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1284,7 +1351,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with sitemapUrl = ?sitemapUrl };
         updatedSite := ?updated;
@@ -1304,7 +1371,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1340,7 +1407,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with indexStatus = #pending; lastCheckedAt = ?now };
         updatedSite := ?updated;
@@ -1348,7 +1415,7 @@ actor {
       } else w
     });
     // Add websiteId to crawlQueueV2 with appropriate priority
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (?site) { enqueueWithPriority(websiteId, getCrawlPriority(site)) };
       case (null) { enqueueWithPriority(websiteId, PRIORITY_NEW) };
     };
@@ -1361,7 +1428,7 @@ actor {
 
   public query ({ caller }) func getPagesForWebsite(websiteId : Nat) : async [Page] {
     requireRegistered(caller);
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1387,7 +1454,7 @@ actor {
 
   public shared ({ caller }) func updateLastCrawledAt(websiteId : Nat) : async () {
     requireAdmin(caller);
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) { { w with lastCrawledAt = ?Time.now() } } else w
     });
   };
@@ -1398,7 +1465,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var approvedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with
           status = #approved;
@@ -1419,7 +1486,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var rejectedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #rejected };
         rejectedSite := ?updated;
@@ -1446,7 +1513,7 @@ actor {
     validateDescription(description, callerText);
     validateKeywords(keywords, callerText);
     var editedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with title; description; keywords };
         editedSite := ?updated;
@@ -1468,7 +1535,7 @@ actor {
   public shared ({ caller }) func deleteWebsite(websiteId : Nat) : async () {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
-    websitesV4 := websitesV4.filter(func(w : Website) : Bool { w.id != websiteId });
+    websitesV5 := websitesV5.filter(func(w : Website) : Bool { w.id != websiteId });
     removeFromIndex(websiteId);
   };
 
@@ -1476,7 +1543,7 @@ actor {
     requireAdmin(caller);
     if (boost > 500) { Runtime.trap("Admin boost cannot exceed 500") };
     var updatedSite : ?Website = null;
-    websitesV4 := websitesV4.map(func(w : Website) : Website {
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with adminBoost = boost };
         updatedSite := ?updated;
@@ -1494,12 +1561,12 @@ actor {
 
   public query ({ caller }) func getAllWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV4
+    websitesV5
   };
 
   public query ({ caller }) func getPendingWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV4.filter(func(w : Website) : Bool { w.status == #pending })
+    websitesV5.filter(func(w : Website) : Bool { w.status == #pending })
   };
 
   // ─── Admin: Seed Data Import ──────────────────────────────────────────────
@@ -1536,8 +1603,10 @@ actor {
         verificationExpiryAt = null;  // seed sites never expire
         ownerHistory = [];
         adminBoost = 0;
+        clicks = 0;
+        impressions = 0;
       };
-      websitesV4 := websitesV4.concat([site]);
+      websitesV5 := websitesV5.concat([site]);
       addToIndex(site);
       count += 1;
     };
@@ -1547,34 +1616,26 @@ actor {
   // ─── Click Tracking ─────────────────────────────────────────────────────
 
   public func recordClick(url : Text) : async () {
-    var found = false;
-    clickCounts := clickCounts.map(func(entry) {
-      if (entry.0 == url) { found := true; (entry.0, entry.1 + 1) } else entry
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
+      if (w.url == url) { { w with clicks = w.clicks + 1 } } else w
     });
-    if (not found) {
-      clickCounts := clickCounts.concat([(url, 1)]);
-    };
   };
 
   // ─── Impression Tracking ────────────────────────────────────────────────
 
   public func recordImpression(url : Text) : async () {
-    var found = false;
-    impressionCounts := impressionCounts.map(func(entry) {
-      if (entry.0 == url) { found := true; (entry.0, entry.1 + 1) } else entry
+    websitesV5 := websitesV5.map(func(w : Website) : Website {
+      if (w.url == url) { { w with impressions = w.impressions + 1 } } else w
     });
-    if (not found) {
-      impressionCounts := impressionCounts.concat([(url, 1)]);
-    };
   };
 
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   public query func getStats() : async Stats {
     {
-      total = websitesV4.size();
-      approved = websitesV4.filter(func(w : Website) : Bool { w.status == #approved }).size();
-      pending = websitesV4.filter(func(w : Website) : Bool { w.status == #pending }).size();
+      total = websitesV5.size();
+      approved = websitesV5.filter(func(w : Website) : Bool { w.status == #approved }).size();
+      pending = websitesV5.filter(func(w : Website) : Bool { w.status == #pending }).size();
     }
   };
 
@@ -2146,9 +2207,8 @@ actor {
     };
     let submittedRecently = (now - site.submittedAt) < ONE_DAY_NS_INT;
     if (submittedRecently) { return PRIORITY_NEW };
-    // Active if clickCounts >= 10
-    let clicks = getClicks(site.url);
-    if (clicks >= 10) { return PRIORITY_ACTIVE };
+    // Active if site.clicks >= 10
+    if (site.clicks >= 10) { return PRIORITY_ACTIVE };
     PRIORITY_LOW_ACTIVITY
   };
 
@@ -2202,7 +2262,7 @@ actor {
   // Admin can manually add a websiteId to the crawl queue
   public shared ({ caller }) func addToCrawlQueue(websiteId : Nat) : async () {
     requireAdmin(caller);
-    switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let priority = getCrawlPriority(site);
@@ -2218,7 +2278,7 @@ actor {
     requireAdmin(caller);
     let now = Time.now();
     var queued : Nat = 0;
-    for (site in websitesV4.vals()) {
+    for (site in websitesV5.vals()) {
       // Only process approved sites
       if (site.status == #approved) {
         if (isDueCrawl(site, now)) {
@@ -2246,7 +2306,7 @@ actor {
     for (entry in queueSnapshot.vals()) {
       let websiteId = entry.1;
       // Find website
-      switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+      switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
         case (null) {
           // Website deleted — drop from queue silently
         };
@@ -2295,7 +2355,7 @@ actor {
             };
 
             // ── 5. Update website record ────────────────────────────────────
-            websitesV4 := websitesV4.map(func(w : Website) : Website {
+            websitesV5 := websitesV5.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with
                   title = extractedTitle;
@@ -2308,7 +2368,7 @@ actor {
 
             // Re-index with updated title/description
             removeFromIndex(websiteId);
-            switch (websitesV4.find(func(w : Website) : Bool { w.id == websiteId })) {
+            switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
               case (?updated) { addToIndex(updated) };
               case (null) {};
             };
@@ -2318,7 +2378,7 @@ actor {
 
           } catch (_) {
             // ── Fetch failed: mark as error, keep in queue for retry ────────
-            websitesV4 := websitesV4.map(func(w : Website) : Website {
+            websitesV5 := websitesV5.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with indexStatus = #error; lastCrawledAt = ?now }
               } else w
