@@ -287,6 +287,22 @@ actor {
   // Priority: New=100, Active=70, LowActivity=30
   var crawlQueueV2 : [(Nat, Nat)] = [];
 
+  // ─── User Search History ─────────────────────────────────────────────────
+  // Stores last 20 search queries per user (keyed by email)
+  stable var userSearchHistory : [(Text, [Text])] = [];
+
+  // ─── User Click History ──────────────────────────────────────────────────
+  // Stores last 30 clicked URLs per user (keyed by email)
+  stable var userClickHistory : [(Text, [Text])] = [];
+
+  // ─── User Interest Profile ────────────────────────────────────────────────
+  // Top-10 keywords per user, recomputed on click or every 4th search
+  stable var userInterests : [(Text, [Text])] = [];
+
+  // ─── User Search Count ────────────────────────────────────────────────────
+  // Tracks cumulative search count per user for throttled recomputation
+  stable var userSearchCount : [(Text, Nat)] = [];
+
   // ─── Migration helpers ────────────────────────────────────────────────────
 
   func migrateV1toV2(w : WebsiteV1) : WebsiteV2 {
@@ -855,7 +871,8 @@ actor {
 
   // ─── Search (Algorithm-Based Ranking) ─────────────────────────────────────
 
-  public query func searchWebsites(searchQuery : Text) : async [Website] {
+  public query func searchWebsites(searchQuery : Text, emailOpt : ?Text) : async [Website] {
+    ignore emailOpt; // future: personalization based on click history
     let trimmed = searchQuery.trim(#char ' ');
     if (trimmed.size() == 0) { return [] };
     if (trimmed.size() > 200) { return [] };
@@ -2404,4 +2421,208 @@ actor {
     requireAdmin(caller);
     adsEnabled := enabled;
   };
+
+  // ─── User Search History ──────────────────────────────────────────────────
+
+  public shared func recordUserSearch(email : Text, searchQuery : Text) : async () {
+    let trimmed = searchQuery.trim(#char ' ');
+    if (trimmed.size() == 0) return;
+
+    var found = false;
+    userSearchHistory := userSearchHistory.map<(Text, [Text]), (Text, [Text])>(
+      func(entry : (Text, [Text])) : (Text, [Text]) {
+        if (entry.0 == email) {
+          found := true;
+          // Prepend query, remove duplicates, cap at 20
+          var newQueries : [Text] = [trimmed];
+          for (q in entry.1.vals()) {
+            if (q != trimmed and newQueries.size() < 20) {
+              newQueries := newQueries.concat([q]);
+            };
+          };
+          (email, newQueries)
+        } else {
+          entry
+        }
+      }
+    );
+
+    if (not found) {
+      userSearchHistory := userSearchHistory.concat([(email, [trimmed])]);
+    };
+
+    // ── Throttled interest refresh: every 4th search ──────────────────────
+    var countFound = false;
+    var newCount : Nat = 1;
+    userSearchCount := userSearchCount.map<(Text, Nat), (Text, Nat)>(
+      func(entry : (Text, Nat)) : (Text, Nat) {
+        if (entry.0 == email) {
+          countFound := true;
+          newCount := entry.1 + 1;
+          (email, newCount)
+        } else { entry }
+      }
+    );
+    if (not countFound) {
+      userSearchCount := userSearchCount.concat([(email, 1)]);
+      newCount := 1;
+    };
+    if (newCount % 4 == 0) {
+      refreshUserInterestsInternal(email);
+    };
+  };
+
+  public query func getUserSearchHistory(email : Text) : async [Text] {
+    for (entry in userSearchHistory.vals()) {
+      if (entry.0 == email) { return entry.1 };
+    };
+    []
+  };
+
+  // ─── User Click History ──────────────────────────────────────────────────
+
+  public shared func recordUserClick(email : Text, url : Text) : async () {
+    let trimmed = url.trim(#char ' ');
+    if (trimmed.size() == 0) return;
+
+    var found = false;
+    userClickHistory := userClickHistory.map<(Text, [Text]), (Text, [Text])>(
+      func(entry : (Text, [Text])) : (Text, [Text]) {
+        if (entry.0 == email) {
+          found := true;
+          // Prepend URL, remove duplicates, cap at 30
+          var newUrls : [Text] = [trimmed];
+          for (u in entry.1.vals()) {
+            if (u != trimmed and newUrls.size() < 30) {
+              newUrls := newUrls.concat([u]);
+            };
+          };
+          (email, newUrls)
+        } else {
+          entry
+        }
+      }
+    );
+
+    if (not found) {
+      userClickHistory := userClickHistory.concat([(email, [trimmed])]);
+    };
+
+    // ── Refresh interests on every new click ──────────────────────────────
+    refreshUserInterestsInternal(email);
+  };
+
+  public query func getUserClickHistory(email : Text) : async [Text] {
+    for (entry in userClickHistory.vals()) {
+      if (entry.0 == email) { return entry.1 };
+    };
+    []
+  };
+
+  // ─── User Interest Scoring ────────────────────────────────────────────────
+  // Efficient hybrid approach:
+  //   - Recomputed after every click
+  //   - Recomputed after every 4th search (not every search)
+  // Stores top 10 keywords per user in stable storage.
+
+  func refreshUserInterestsInternal(email : Text) {
+    var freq : [(Text, Nat)] = [];
+
+    func addKeyword(raw : Text) {
+      let kw = raw.toLower().trim(#char ' ');
+      if (kw.size() < 3) return;
+      // Skip common English stopwords
+      let stopwords = ["the", "and", "for", "are", "but", "not", "you", "all",
+        "can", "was", "one", "our", "out", "get", "has", "how", "its", "new",
+        "now", "see", "who", "did", "let", "say", "she", "too", "use", "www",
+        "com", "org", "net", "http", "https"];
+      for (sw in stopwords.vals()) {
+        if (kw == sw) return;
+      };
+      var found = false;
+      freq := freq.map<(Text, Nat), (Text, Nat)>(
+        func(e : (Text, Nat)) : (Text, Nat) {
+          if (e.0 == kw) { found := true; (kw, e.1 + 1) } else e
+        }
+      );
+      if (not found) { freq := freq.concat([(kw, 1)]) };
+    };
+
+    // 1. Tokens from user's search queries
+    for (entry in userSearchHistory.vals()) {
+      if (entry.0 == email) {
+        for (q in entry.1.vals()) {
+          for (t in tokenize(q).vals()) { addKeyword(t) };
+        };
+      };
+    };
+
+    // 2. Keywords from websites the user clicked
+    for (entry in userClickHistory.vals()) {
+      if (entry.0 == email) {
+        for (url in entry.1.vals()) {
+          for (site in websitesV5.vals()) {
+            // Match on exact URL or URL prefix (handles trailing slashes)
+            // Check if the clicked URL matches this site's base URL (exact match only)
+            if (site.url == url) {
+              for (kw in site.keywords.vals()) {
+                for (t in tokenize(kw).vals()) { addKeyword(t) };
+              };
+            };
+          };
+        };
+      };
+    };
+
+    // 3. Sort by frequency descending using a simple selection approach
+    //    (freq is at most a few hundred entries -- fast enough)
+    var remaining = freq;
+    var sorted : [Text] = [];
+    var i = 0;
+    while (i < 10 and remaining.size() > 0) {
+      // Find max
+      var maxIdx = 0;
+      var maxVal : Nat = 0;
+      var j = 0;
+      for (e in remaining.vals()) {
+        if (e.1 > maxVal) { maxVal := e.1; maxIdx := j };
+        j += 1;
+      };
+      sorted := sorted.concat([remaining[maxIdx].0]);
+      // Remove selected entry
+      let finalMaxIdx = maxIdx;
+      // Remove selected entry by rebuilding array without that index
+      let prevRemaining = remaining;
+      remaining := Array.tabulate<(Text, Nat)>(
+        if (prevRemaining.size() > 0) { prevRemaining.size() - 1 } else { 0 },
+        func(k : Nat) : (Text, Nat) {
+          if (k < finalMaxIdx) { prevRemaining[k] } else { prevRemaining[k + 1] }
+        }
+      );
+      i += 1;
+    };
+
+    // 4. Persist
+    var stored = false;
+    userInterests := userInterests.map<(Text, [Text]), (Text, [Text])>(
+      func(entry : (Text, [Text])) : (Text, [Text]) {
+        if (entry.0 == email) { stored := true; (email, sorted) } else entry
+      }
+    );
+    if (not stored) { userInterests := userInterests.concat([(email, sorted)]) };
+  };
+
+  // Public: manually trigger interest refresh from frontend
+  public shared func refreshUserInterests(email : Text) : async () {
+    refreshUserInterestsInternal(email);
+  };
+
+  // Public query: return stored top-10 interest keywords for a user
+  public query func getUserInterests(email : Text) : async [Text] {
+    for (entry in userInterests.vals()) {
+      if (entry.0 == email) { return entry.1 };
+    };
+    []
+  };
+
 };

@@ -259,6 +259,8 @@ export interface backendInterface {
     recordUserClick(email: string, url: string): Promise<void>;
     getUserSearchHistory(email: string): Promise<Array<string>>;
     getUserClickHistory(email: string): Promise<Array<string>>;
+    refreshUserInterests(email: string): Promise<void>;
+    getUserInterests(email: string): Promise<Array<string>>;
 }
 import type { AdvertiserProfile as _AdvertiserProfile, AdvertiserStatus as _AdvertiserStatus, BlacklistEntry as _BlacklistEntry, BlacklistStatus as _BlacklistStatus, Campaign as _Campaign, CampaignStatus as _CampaignStatus, Result as _Result, UserProfile as _UserProfile, UserRole as _UserRole, Website as _Website, WebsiteStatus as _WebsiteStatus } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -954,6 +956,38 @@ export class Backend implements backendInterface {
         } else {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await (this.actor as any).getUserClickHistory(arg0);
+            return result as string[];
+        }
+    }
+    async refreshUserInterests(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).refreshUserInterests(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).refreshUserInterests(arg0);
+            return result;
+        }
+    }
+    async getUserInterests(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).getUserInterests(arg0);
+                return result as string[];
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).getUserInterests(arg0);
             return result as string[];
         }
     }

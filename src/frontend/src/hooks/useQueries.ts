@@ -766,3 +766,25 @@ export function useGetUserClickHistory(email: string | null) {
     enabled: !!actor && !isFetching && !!email,
   });
 }
+
+export function useGetUserInterests(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<string[]>({
+    queryKey: ["userInterests", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      return actor.getUserInterests(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useRefreshUserInterests() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { email: string }) => {
+      if (!actor) return;
+      await actor.refreshUserInterests(data.email);
+    },
+  });
+}

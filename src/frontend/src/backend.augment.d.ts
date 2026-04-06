@@ -73,6 +73,8 @@ declare module "./backend" {
     recordUserClick(email: string, url: string): Promise<void>;
     getUserSearchHistory(email: string): Promise<string[]>;
     getUserClickHistory(email: string): Promise<string[]>;
+    refreshUserInterests(email: string): Promise<void>;
+    getUserInterests(email: string): Promise<string[]>;
 
     // Advertiser / Monetization
     applyForAdvertiser(email: string): Promise<void>;

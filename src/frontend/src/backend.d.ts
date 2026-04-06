@@ -211,4 +211,6 @@ export interface backendInterface {
     recordUserClick(email: string, url: string): Promise<void>;
     getUserSearchHistory(email: string): Promise<Array<string>>;
     getUserClickHistory(email: string): Promise<Array<string>>;
+    refreshUserInterests(email: string): Promise<void>;
+    getUserInterests(email: string): Promise<Array<string>>;
 }
