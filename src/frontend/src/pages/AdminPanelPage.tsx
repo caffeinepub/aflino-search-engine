@@ -87,6 +87,8 @@ import {
   useGetStats,
   useImportSeedData,
   usePauseCampaign,
+  useRecalculateAllSpamScores,
+  useRecalculateSpamScore,
   useRejectAdvertiser,
   useRejectWebsite,
   useRemoveFromBlacklist,
@@ -517,7 +519,29 @@ function WebsitesSection() {
   const cleanupMutation = useRunOwnershipCleanup();
   const crawlerMutation = useRunCrawler();
   const recrawlMutation = useCheckAndQueueRecrawl();
+  const recalcSpamMutation = useRecalculateSpamScore();
+  const recalcAllSpamMutation = useRecalculateAllSpamScores();
   const { data: crawlQueue = [] } = useGetCrawlQueue();
+
+  const handleRecalcAllSpam = async () => {
+    try {
+      const count = await recalcAllSpamMutation.mutateAsync();
+      toast.success(
+        `Spam scores recalculated for ${count.toString()} websites.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Recalculation failed");
+    }
+  };
+
+  const handleRecalcSpam = async (id: bigint) => {
+    try {
+      const score = await recalcSpamMutation.mutateAsync(id);
+      toast.success(`Spam score updated: ${score.toString()}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Recalculation failed");
+    }
+  };
 
   const handleRunCrawler = async () => {
     if (
@@ -550,6 +574,9 @@ function WebsitesSection() {
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected"
   >("all");
+  const [spamFilter, setSpamFilter] = useState<
+    "all" | "low" | "medium" | "high"
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingWebsite, setEditingWebsite] = useState<Website | null>(null);
   const [seedOpen, setSeedOpen] = useState(false);
@@ -581,6 +608,10 @@ function WebsitesSection() {
         return false;
       if (statusFilter === "rejected" && !hasKey(s.status, "rejected"))
         return false;
+      const spam = Number(s.spamScore ?? 0);
+      if (spamFilter === "low" && spam > 30) return false;
+      if (spamFilter === "medium" && (spam < 31 || spam > 70)) return false;
+      if (spamFilter === "high" && spam <= 70) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -730,6 +761,27 @@ function WebsitesSection() {
             <Button
               size="sm"
               variant="outline"
+              onClick={() => void handleRecalcAllSpam()}
+              disabled={recalcAllSpamMutation.isPending}
+              className="gap-1.5 text-purple-700 border-purple-300 hover:bg-purple-50"
+              title="Recalculate spam scores for all websites"
+              data-ocid="websites.recalc_spam.button"
+            >
+              {recalcAllSpamMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Recalculating…
+                </>
+              ) : (
+                <>
+                  <Shield className="h-3.5 w-3.5" />
+                  Recalc All Spam
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => void handleOwnershipCleanup()}
               disabled={cleanupMutation.isPending}
               className="gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-50"
@@ -756,31 +808,65 @@ function WebsitesSection() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex gap-1 border border-border rounded-lg p-1 bg-muted/30">
-          {statusTabs.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => setStatusFilter(t.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                statusFilter === t.value
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              data-ocid={`websites.filter.${t.value}.tab`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex gap-1 border border-border rounded-lg p-1 bg-muted/30">
+            {statusTabs.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setStatusFilter(t.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  statusFilter === t.value
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-ocid={`websites.filter.${t.value}.tab`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <Input
+            placeholder="Search by domain or title…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="max-w-xs"
+            data-ocid="websites.search_input"
+          />
         </div>
-        <Input
-          placeholder="Search by domain or title…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-xs"
-          data-ocid="websites.search_input"
-        />
+        {/* Spam Score Filter */}
+        <div className="flex gap-1 border border-border rounded-lg p-1 bg-muted/30 w-fit">
+          {(["all", "low", "medium", "high"] as const).map((val) => {
+            const labels = {
+              all: "All Spam",
+              low: "Low (0–30)",
+              medium: "Med (31–70)",
+              high: "High (71–100)",
+            };
+            const colors = {
+              all: "",
+              low: "text-green-700",
+              medium: "text-yellow-700",
+              high: "text-red-700",
+            };
+            return (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setSpamFilter(val)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  spamFilter === val
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : `text-muted-foreground hover:text-foreground ${colors[val]}`
+                }`}
+                data-ocid={`websites.spam_filter.${val}.tab`}
+              >
+                {labels[val]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Table */}
@@ -814,6 +900,7 @@ function WebsitesSection() {
                 <TableHead>URL</TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Spam</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -846,6 +933,24 @@ function WebsitesSection() {
                       isSeed={site.isSeed}
                       showVerified={false}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const score = Number(site.spamScore ?? 0);
+                      const cls =
+                        score > 70
+                          ? "bg-red-100 text-red-700 border-red-200"
+                          : score > 30
+                            ? "bg-yellow-100 text-yellow-700 border-yellow-200"
+                            : "bg-green-100 text-green-700 border-green-200";
+                      return (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}
+                        >
+                          {score}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {formatDate(site.submittedAt)}
@@ -893,6 +998,22 @@ function WebsitesSection() {
                         data-ocid={`websites.boost.button.${i + 1}`}
                       >
                         <Rocket className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title={`Spam Score: ${Number(site.spamScore ?? 0)} — click to recalculate`}
+                        onClick={() => void handleRecalcSpam(site.id)}
+                        disabled={recalcSpamMutation.isPending}
+                        className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors ${
+                          Number(site.spamScore ?? 0) > 70
+                            ? "text-red-600 bg-red-50 hover:bg-red-100"
+                            : Number(site.spamScore ?? 0) > 30
+                              ? "text-yellow-600 bg-yellow-50 hover:bg-yellow-100"
+                              : "text-green-600 hover:bg-green-50"
+                        }`}
+                        data-ocid={`websites.recalc_spam.button.${i + 1}`}
+                      >
+                        <Shield className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"

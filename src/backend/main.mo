@@ -121,7 +121,67 @@ actor {
     adminBoost : Nat;
   };
 
-  // ─── Current Website type (V5) ────────────────────────────────────────────
+  // ─── Legacy Website type (V5) - used for V6 migration ───────────────────
+  type WebsiteV5Legacy = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    ownershipStatus : OwnershipStatus;
+    verificationStatus : VerificationStatus;
+    lastVerifiedAt : ?Int;
+    verificationExpiryAt : ?Int;
+    ownerHistory : [Text];
+    adminBoost : Nat;
+    clicks : Nat;
+    impressions : Nat;
+  };
+
+
+  // ─── Legacy Website type (V6) - used for V7 migration ───────────────────
+  type WebsiteV6Legacy = {
+    id : Nat;
+    url : Text;
+    title : Text;
+    description : Text;
+    keywords : [Text];
+    status : WebsiteStatus;
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    verificationToken : Text;
+    isVerified : Bool;
+    isSeed : Bool;
+    submittedAt : Int;
+    approvedAt : ?Int;
+    indexStatus : IndexStatus;
+    sitemapUrl : ?Text;
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    ownershipStatus : OwnershipStatus;
+    verificationStatus : VerificationStatus;
+    lastVerifiedAt : ?Int;
+    verificationExpiryAt : ?Int;
+    ownerHistory : [Text];
+    adminBoost : Nat;
+    clicks : Nat;
+    impressions : Nat;
+    spamScore : Nat;
+  };
+
+  // ─── Current Website type (V7) ────────────────────────────────────────────
   public type Website = {
     id : Nat;
     url : Text;
@@ -154,6 +214,10 @@ actor {
     // Analytics (V5)
     clicks : Nat;
     impressions : Nat;
+    // Spam Detection (V6)
+    spamScore : Nat;
+    // SEO Score (V7)
+    seoScore : Nat;
   };
 
   public type PageStatus = { #pending; #indexed; #error };
@@ -253,8 +317,14 @@ actor {
   // V4 stable var — legacy (migration only, renamed for V5 migration)
   var websitesV4 : [WebsiteV4Legacy] = [];
 
-  // V5 stable var — live array used by all runtime logic
-  var websitesV5 : [Website] = [];
+  // V5 stable var — legacy (migration only; type is WebsiteV5Legacy for canister compatibility)
+  var websitesV5 : [WebsiteV5Legacy] = [];
+
+  // V6 stable var — legacy (migration only)
+  var websitesV6 : [WebsiteV6Legacy] = [];
+
+  // V7 stable var — live array used by all runtime logic (Website with seoScore)
+  var websitesV7 : [Website] = [];
 
   var indexTerms : [(Text, [Nat])] = [];
 
@@ -382,7 +452,7 @@ actor {
     }
   };
 
-  func migrateV4toV5(w : WebsiteV4Legacy, clicks : Nat, impressions : Nat) : Website {
+  func migrateV4toV5Legacy(w : WebsiteV4Legacy, clicks : Nat, impressions : Nat) : WebsiteV5Legacy {
     {
       id                   = w.id;
       url                  = w.url;
@@ -412,6 +482,37 @@ actor {
     }
   };
 
+  func migrateV5toV6(w : WebsiteV5Legacy) : WebsiteV6Legacy {
+    {
+      id                   = w.id;
+      url                  = w.url;
+      title                = w.title;
+      description          = w.description;
+      keywords             = w.keywords;
+      status               = w.status;
+      ownerId              = w.ownerId;
+      ownerPrincipal       = w.ownerPrincipal;
+      verificationToken    = w.verificationToken;
+      isVerified           = w.isVerified;
+      isSeed               = w.isSeed;
+      submittedAt          = w.submittedAt;
+      approvedAt           = w.approvedAt;
+      indexStatus          = w.indexStatus;
+      sitemapUrl           = w.sitemapUrl;
+      lastCheckedAt        = w.lastCheckedAt;
+      lastCrawledAt        = w.lastCrawledAt;
+      ownershipStatus      = w.ownershipStatus;
+      verificationStatus   = w.verificationStatus;
+      lastVerifiedAt       = w.lastVerifiedAt;
+      verificationExpiryAt = w.verificationExpiryAt;
+      ownerHistory         = w.ownerHistory;
+      adminBoost           = w.adminBoost;
+      clicks               = w.clicks;
+      impressions          = w.impressions;
+      spamScore            = 0; // default 0 for existing sites
+    }
+  };
+
   // Run full migration chain on upgrade
   system func postupgrade() {
     // Step 1: V1 -> V2
@@ -436,7 +537,7 @@ actor {
     };
     // Step 5: V4 -> V5 (adds clicks and impressions fields, migrates from external arrays)
     if (websitesV5.size() == 0 and websitesV4.size() > 0) {
-      websitesV5 := websitesV4.map(func(w : WebsiteV4Legacy) : Website {
+      websitesV5 := websitesV4.map(func(w : WebsiteV4Legacy) : WebsiteV5Legacy {
         var clicks : Nat = 0;
         var impressions : Nat = 0;
         for ((u, c) in clickCounts.vals()) {
@@ -445,9 +546,49 @@ actor {
         for ((u, c) in impressionCounts.vals()) {
           if (u == w.url) { impressions := c };
         };
-        migrateV4toV5(w, clicks, impressions)
+        migrateV4toV5Legacy(w, clicks, impressions)
       });
       websitesV4 := [];
+    };
+    // Step 6: V5 (WebsiteV5Legacy) -> V6 (WebsiteV6Legacy with spamScore)
+    if (websitesV6.size() == 0 and websitesV5.size() > 0) {
+      websitesV6 := websitesV5.map(migrateV5toV6);
+      websitesV5 := [];
+    };
+    // Step 7: V6 (WebsiteV6Legacy) -> V7 (Website with seoScore)
+    if (websitesV7.size() == 0 and websitesV6.size() > 0) {
+      websitesV7 := websitesV6.map(func(w : WebsiteV6Legacy) : Website {
+        {
+          id                   = w.id;
+          url                  = w.url;
+          title                = w.title;
+          description          = w.description;
+          keywords             = w.keywords;
+          status               = w.status;
+          ownerId              = w.ownerId;
+          ownerPrincipal       = w.ownerPrincipal;
+          verificationToken    = w.verificationToken;
+          isVerified           = w.isVerified;
+          isSeed               = w.isSeed;
+          submittedAt          = w.submittedAt;
+          approvedAt           = w.approvedAt;
+          indexStatus          = w.indexStatus;
+          sitemapUrl           = w.sitemapUrl;
+          lastCheckedAt        = w.lastCheckedAt;
+          lastCrawledAt        = w.lastCrawledAt;
+          ownershipStatus      = w.ownershipStatus;
+          verificationStatus   = w.verificationStatus;
+          lastVerifiedAt       = w.lastVerifiedAt;
+          verificationExpiryAt = w.verificationExpiryAt;
+          ownerHistory         = w.ownerHistory;
+          adminBoost           = w.adminBoost;
+          clicks               = w.clicks;
+          impressions          = w.impressions;
+          spamScore            = w.spamScore;
+          seoScore             = 0; // default for existing sites
+        }
+      });
+      websitesV6 := [];
     };
   };
 
@@ -456,7 +597,7 @@ actor {
   // Check if a site's verification has expired (used before critical actions)
   func checkAndExpireSite(siteId : Nat) {
     let now = Time.now();
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == siteId and not w.isSeed) {
         switch (w.verificationExpiryAt) {
           case (?expiry) {
@@ -839,6 +980,120 @@ actor {
     false
   };
 
+  // ─── Spam Score Calculation (0-100) ──────────────────────────────────────
+  // Future-ready: designed for ML signal integration and user spam reports.
+  // Score components:
+  //   +30: keyword stuffing (3+ keyword occurrences in title+description)
+  //   +25: suspicious URL (length > 100 OR high ratio of non-alpha chars)
+  //   +20: low-quality content (description empty or < 20 chars)
+  //   +25: repeated domain submissions (same domain 3+ times in websitesV7)
+  // Seed sites always return 0 (trusted).
+  func calculateSpamScore(url : Text, title : Text, description : Text, keywords : [Text], isSeed : Bool) : Nat {
+    if (isSeed) { return 0 }; // Seed/admin sites are always trusted
+    var score : Nat = 0;
+
+    // Signal 1: Keyword stuffing (+30)
+    if (isSpammy(title, description, keywords)) {
+      score += 30;
+    };
+
+    // Signal 2: Suspicious URL (+25)
+    // Too long OR high proportion of non-alphanumeric chars (random strings)
+    let urlLen = url.size();
+    if (urlLen > 100) {
+      score += 25;
+    } else {
+      // Count non-alpha chars in URL (excluding common safe chars: :/.-_~?=#@%)
+      let urlLower = url.toLower();
+      var nonAlpha : Nat = 0;
+      var total : Nat = 0;
+      for (c in urlLower.chars()) {
+        total += 1;
+        let isAlphaNum = (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9');
+        let isSafe = c == ':' or c == '/' or c == '.' or c == '-' or c == '_' or c == '~' or c == '?' or c == '=' or c == '#' or c == '@' or c == '%';
+        if (not isAlphaNum and not isSafe) {
+          nonAlpha += 1;
+        };
+      };
+      // If more than 20% of URL chars are non-alpha/non-safe → suspicious
+      if (total > 0 and (nonAlpha * 100) / total > 20) {
+        score += 25;
+      };
+    };
+
+    // Signal 3: Low-quality content (+20)
+    let descSize = description.trim(#char ' ').size();
+    if (descSize < 20) {
+      score += 20;
+    };
+
+    // Signal 4: Repeated domain submissions (+25)
+    // Count how many times this domain has been submitted (any status except seed)
+    let domain = extractDomain(url);
+    var domainCount : Nat = 0;
+    for (site in websitesV7.vals()) {
+      if (not site.isSeed and extractDomain(site.url) == domain) {
+        domainCount += 1;
+      };
+    };
+    if (domainCount >= 3) {
+      score += 25;
+    };
+
+    // Cap at 100
+    if (score > 100) { 100 } else { score }
+  };
+  // ─── SEO Score Calculation (0–100) ────────────────────────────────────────
+  // Score components (each worth 20 points):
+  //   +20: Title length optimal (30–60 chars)
+  //   +20: Description present and meaningful (>= 50 chars)
+  //   +20: Keywords relevant (>= 3 keywords provided)
+  //   +20: HTTPS enabled (URL starts with https://)
+  //   +20: Page freshness (approved within last 90 days)
+  // Seed sites always return 100 (fully trusted, no SEO concerns).
+  func calculateSeoScore(url : Text, title : Text, description : Text, keywords : [Text], approvedAt : ?Int, isSeed : Bool) : Nat {
+    if (isSeed) { return 100 };
+    var score : Nat = 0;
+
+    // Signal 1: Title length optimal (30–60 chars) → +20
+    let titleLen = title.trim(#char ' ').size();
+    if (titleLen >= 30 and titleLen <= 60) {
+      score += 20;
+    };
+
+    // Signal 2: Description present and meaningful (>= 50 chars) → +20
+    let descLen = description.trim(#char ' ').size();
+    if (descLen >= 50) {
+      score += 20;
+    };
+
+    // Signal 3: Keywords relevant (>= 3 keywords) → +20
+    if (keywords.size() >= 3) {
+      score += 20;
+    };
+
+    // Signal 4: HTTPS enabled → +20
+    if (url.startsWith(#text "https://")) {
+      score += 20;
+    };
+
+    // Signal 5: Page freshness (approved within last 90 days) → +20
+    let ninetyDaysNs : Int = 90 * 24 * 60 * 60 * 1_000_000_000;
+    let now = Time.now();
+    switch (approvedAt) {
+      case (?at) {
+        if (now - at < ninetyDaysNs) {
+          score += 20;
+        };
+      };
+      case (null) {};
+    };
+
+    score
+  };
+
+
+
 
 
   // ─── Query Intent Classification ─────────────────────────────────────────
@@ -894,10 +1149,12 @@ actor {
     // 30 days in nanoseconds for freshness boost
     let thirtyDaysNs : Int = 2_592_000_000_000_000;
 
-    // ── 1. Filter eligible sites (approved + active/verified + not expired) ───
-    let eligibleSites = websitesV5.filter(func(w : Website) : Bool {
+    // ── 1. Filter eligible sites (approved + active/verified + not expired + not extreme spam) ───
+    let eligibleSites = websitesV7.filter(func(w : Website) : Bool {
       if (w.status != #approved) return false;
       if (w.isSeed) return true; // seed sites always shown
+      // Exclude extreme spam (spamScore > 90) from all results
+      if (w.spamScore > 90) return false;
       switch (w.verificationStatus) {
         case (#verified) {
           switch (w.ownershipStatus) {
@@ -1007,9 +1264,10 @@ actor {
         case (_) {};
       };
 
-      // ── Spam penalty (-30 if keyword stuffing detected) ───────────────────
-      if (isSpammy(site.title, site.description, site.keywords)) {
-        score -= 30;
+      // ── Spam penalty (stored spamScore, recalculated at submission/approval/edit) ─
+      // spamScore > 70: strong penalty (-50); spamScore > 90: excluded above
+      if (site.spamScore > 70) {
+        score -= 50;
       };
 
       // ── Interest-based personalization ────────────────────────────────────
@@ -1036,6 +1294,10 @@ actor {
 
       // ── Admin boost ────────────────────────────────────────────────────────
       score += site.adminBoost;
+
+      // ── SEO score boost (V7): finalScore += seoScore * 0.2 ──────────────
+      // Integer math: seoScore * 0.2 = seoScore / 5
+      score += site.seoScore / 5;
 
       // Only include sites with a positive relevance signal
       if (score > 0) {
@@ -1124,7 +1386,7 @@ actor {
     let domain = extractDomain(url);
 
     // Ownership-aware duplicate domain check
-    for (site in websitesV5.vals()) {
+    for (site in websitesV7.vals()) {
       if (extractDomain(site.url) == domain and site.status != #rejected) {
         let isActiveAndVerified = switch (site.ownershipStatus) {
           case (#active) {
@@ -1161,6 +1423,8 @@ actor {
 
     let id = nextId;
     nextId += 1;
+    let spam = calculateSpamScore(url, title, description, keywords, false);
+    let seo = calculateSeoScore(url, title, description, keywords, null, false);
     let site : Website = {
       id;
       url;
@@ -1187,14 +1451,16 @@ actor {
       adminBoost = 0;
       clicks = 0;
       impressions = 0;
+      spamScore = spam;
+      seoScore = seo;
     };
-    websitesV5 := websitesV5.concat([site]);
+    websitesV7 := websitesV7.concat([site]);
     site
   };
 
   public query ({ caller }) func getMyWebsites() : async [Website] {
     requireRegistered(caller);
-    websitesV5.filter(func(w : Website) : Bool {
+    websitesV7.filter(func(w : Website) : Bool {
       switch (w.ownerPrincipal) {
         case (?p) { p == caller };
         case (null) { false };
@@ -1205,7 +1471,7 @@ actor {
   // Email-based website lookup (V3 primary method)
   public query ({ caller }) func getMyWebsitesByEmail(email : Text) : async [Website] {
     requireRegistered(caller);
-    websitesV5.filter(func(w : Website) : Bool { w.ownerId == email })
+    websitesV7.filter(func(w : Website) : Bool { w.ownerId == email })
   };
 
   // ─── Domain Verification ──────────────────────────────────────────────────
@@ -1213,7 +1479,7 @@ actor {
   public query ({ caller }) func getVerificationToken(websiteId : Nat) : async Text {
     requireRegistered(caller);
     checkAndExpireSite(websiteId);
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1239,7 +1505,7 @@ actor {
     requireRegistered(caller);
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1257,7 +1523,7 @@ actor {
           let verified = body.contains(#text token);
           if (verified) {
             let now = Time.now();
-            websitesV5 := websitesV5.map(func(w : Website) : Website {
+            websitesV7 := websitesV7.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with
                   isVerified = true;
@@ -1287,7 +1553,7 @@ actor {
       Runtime.trap("Invalid email");
     };
 
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         // Only allow reclaim if ownership/verification is expired
@@ -1306,7 +1572,7 @@ actor {
         let _now = Time.now();
         let newHistory = site.ownerHistory.concat([site.ownerId]);
         var updatedSite : ?Website = null;
-        websitesV5 := websitesV5.map(func(w : Website) : Website {
+        websitesV7 := websitesV7.map(func(w : Website) : Website {
           if (w.id == websiteId) {
             let updated = { w with
               ownerId        = newOwnerEmail;
@@ -1339,7 +1605,7 @@ actor {
     requireAdmin(caller);
     let now = Time.now();
     var count = 0;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.isSeed) {
         // Seed sites bypass expiry system
         w
@@ -1370,7 +1636,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1400,9 +1666,12 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
-        let updated = { w with sitemapUrl = ?sitemapUrl };
+        // Recalculate spamScore and seoScore when sitemap is updated
+        let spam = calculateSpamScore(w.url, w.title, w.description, w.keywords, w.isSeed);
+        let seo = calculateSeoScore(w.url, w.title, w.description, w.keywords, w.approvedAt, w.isSeed);
+        let updated = { w with sitemapUrl = ?sitemapUrl; spamScore = spam; seoScore = seo };
         updatedSite := ?updated;
         updated
       } else w
@@ -1420,7 +1689,7 @@ actor {
     let callerText = caller.toText();
     checkAndExpireSite(websiteId);
 
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1456,7 +1725,7 @@ actor {
     };
 
     var updatedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with indexStatus = #pending; lastCheckedAt = ?now };
         updatedSite := ?updated;
@@ -1464,7 +1733,7 @@ actor {
       } else w
     });
     // Add websiteId to crawlQueueV2 with appropriate priority
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (?site) { enqueueWithPriority(websiteId, getCrawlPriority(site)) };
       case (null) { enqueueWithPriority(websiteId, PRIORITY_NEW) };
     };
@@ -1477,7 +1746,7 @@ actor {
 
   public query ({ caller }) func getPagesForWebsite(websiteId : Nat) : async [Page] {
     requireRegistered(caller);
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let isOwner = switch (site.ownerPrincipal) {
@@ -1503,7 +1772,7 @@ actor {
 
   public shared ({ caller }) func updateLastCrawledAt(websiteId : Nat) : async () {
     requireAdmin(caller);
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) { { w with lastCrawledAt = ?Time.now() } } else w
     });
   };
@@ -1514,12 +1783,18 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var approvedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
+        // Recalculate spamScore and seoScore at approval time
+        let approvedTime = Time.now();
+        let spam = calculateSpamScore(w.url, w.title, w.description, w.keywords, w.isSeed);
+        let seo = calculateSeoScore(w.url, w.title, w.description, w.keywords, ?approvedTime, w.isSeed);
         let updated = { w with
           status = #approved;
-          approvedAt = ?Time.now();
+          approvedAt = ?approvedTime;
           ownershipStatus = #active;
+          spamScore = spam;
+          seoScore = seo;
         };
         approvedSite := ?updated;
         updated
@@ -1535,7 +1810,7 @@ actor {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
     var rejectedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with status = #rejected };
         rejectedSite := ?updated;
@@ -1562,9 +1837,12 @@ actor {
     validateDescription(description, callerText);
     validateKeywords(keywords, callerText);
     var editedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
-        let updated = { w with title; description; keywords };
+        // Recalculate spamScore and seoScore when title/description/keywords change
+        let spam = calculateSpamScore(w.url, title, description, keywords, w.isSeed);
+        let seo = calculateSeoScore(w.url, title, description, keywords, w.approvedAt, w.isSeed);
+        let updated = { w with title; description; keywords; spamScore = spam; seoScore = seo };
         editedSite := ?updated;
         updated
       } else w
@@ -1584,7 +1862,7 @@ actor {
   public shared ({ caller }) func deleteWebsite(websiteId : Nat) : async () {
     requireAdmin(caller);
     checkRateLimit(caller.toText(), "admin", 30, 60);
-    websitesV5 := websitesV5.filter(func(w : Website) : Bool { w.id != websiteId });
+    websitesV7 := websitesV7.filter(func(w : Website) : Bool { w.id != websiteId });
     removeFromIndex(websiteId);
   };
 
@@ -1592,7 +1870,7 @@ actor {
     requireAdmin(caller);
     if (boost > 500) { Runtime.trap("Admin boost cannot exceed 500") };
     var updatedSite : ?Website = null;
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.id == websiteId) {
         let updated = { w with adminBoost = boost };
         updatedSite := ?updated;
@@ -1608,14 +1886,44 @@ actor {
     }
   };
 
+  // ─── Spam Score: Admin recalculation ─────────────────────────────────────
+
+  public shared ({ caller }) func recalculateSpamScore(websiteId : Nat) : async Nat {
+    requireAdmin(caller);
+    var newScore : Nat = 0;
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
+      if (w.id == websiteId) {
+        let spam = calculateSpamScore(w.url, w.title, w.description, w.keywords, w.isSeed);
+        let seo = calculateSeoScore(w.url, w.title, w.description, w.keywords, w.approvedAt, w.isSeed);
+        newScore := spam;
+        { w with spamScore = spam; seoScore = seo }
+      } else w
+    });
+    addLog("SPAM_RECALC", caller.toText(), "Website " # websiteId.toText() # " spamScore recalculated: " # newScore.toText());
+    newScore
+  };
+
+  public shared ({ caller }) func recalculateAllSpamScores() : async Nat {
+    requireAdmin(caller);
+    var count : Nat = 0;
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
+      let spam = calculateSpamScore(w.url, w.title, w.description, w.keywords, w.isSeed);
+      let seo = calculateSeoScore(w.url, w.title, w.description, w.keywords, w.approvedAt, w.isSeed);
+      count += 1;
+      { w with spamScore = spam; seoScore = seo }
+    });
+    addLog("SPAM_RECALC_ALL", caller.toText(), "All " # count.toText() # " websites spamScore recalculated");
+    count
+  };
+
   public query ({ caller }) func getAllWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV5
+    websitesV7
   };
 
   public query ({ caller }) func getPendingWebsites() : async [Website] {
     requireAdmin(caller);
-    websitesV5.filter(func(w : Website) : Bool { w.status == #pending })
+    websitesV7.filter(func(w : Website) : Bool { w.status == #pending })
   };
 
   // ─── Admin: Seed Data Import ──────────────────────────────────────────────
@@ -1654,8 +1962,10 @@ actor {
         adminBoost = 0;
         clicks = 0;
         impressions = 0;
+        spamScore = 0; // seed sites are always trusted
+        seoScore = 100; // seed sites are fully trusted for SEO
       };
-      websitesV5 := websitesV5.concat([site]);
+      websitesV7 := websitesV7.concat([site]);
       addToIndex(site);
       count += 1;
     };
@@ -1665,7 +1975,7 @@ actor {
   // ─── Click Tracking ─────────────────────────────────────────────────────
 
   public func recordClick(url : Text) : async () {
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.url == url) { { w with clicks = w.clicks + 1 } } else w
     });
   };
@@ -1673,7 +1983,7 @@ actor {
   // ─── Impression Tracking ────────────────────────────────────────────────
 
   public func recordImpression(url : Text) : async () {
-    websitesV5 := websitesV5.map(func(w : Website) : Website {
+    websitesV7 := websitesV7.map(func(w : Website) : Website {
       if (w.url == url) { { w with impressions = w.impressions + 1 } } else w
     });
   };
@@ -1682,9 +1992,9 @@ actor {
 
   public query func getStats() : async Stats {
     {
-      total = websitesV5.size();
-      approved = websitesV5.filter(func(w : Website) : Bool { w.status == #approved }).size();
-      pending = websitesV5.filter(func(w : Website) : Bool { w.status == #pending }).size();
+      total = websitesV7.size();
+      approved = websitesV7.filter(func(w : Website) : Bool { w.status == #approved }).size();
+      pending = websitesV7.filter(func(w : Website) : Bool { w.status == #pending }).size();
     }
   };
 
@@ -2311,7 +2621,7 @@ actor {
   // Admin can manually add a websiteId to the crawl queue
   public shared ({ caller }) func addToCrawlQueue(websiteId : Nat) : async () {
     requireAdmin(caller);
-    switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+    switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
       case (null) { Runtime.trap("Website not found") };
       case (?site) {
         let priority = getCrawlPriority(site);
@@ -2327,7 +2637,7 @@ actor {
     requireAdmin(caller);
     let now = Time.now();
     var queued : Nat = 0;
-    for (site in websitesV5.vals()) {
+    for (site in websitesV7.vals()) {
       // Only process approved sites
       if (site.status == #approved) {
         if (isDueCrawl(site, now)) {
@@ -2355,7 +2665,7 @@ actor {
     for (entry in queueSnapshot.vals()) {
       let websiteId = entry.1;
       // Find website
-      switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+      switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
         case (null) {
           // Website deleted — drop from queue silently
         };
@@ -2404,7 +2714,7 @@ actor {
             };
 
             // ── 5. Update website record ────────────────────────────────────
-            websitesV5 := websitesV5.map(func(w : Website) : Website {
+            websitesV7 := websitesV7.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with
                   title = extractedTitle;
@@ -2417,7 +2727,7 @@ actor {
 
             // Re-index with updated title/description
             removeFromIndex(websiteId);
-            switch (websitesV5.find(func(w : Website) : Bool { w.id == websiteId })) {
+            switch (websitesV7.find(func(w : Website) : Bool { w.id == websiteId })) {
               case (?updated) { addToIndex(updated) };
               case (null) {};
             };
@@ -2427,7 +2737,7 @@ actor {
 
           } catch (_) {
             // ── Fetch failed: mark as error, keep in queue for retry ────────
-            websitesV5 := websitesV5.map(func(w : Website) : Website {
+            websitesV7 := websitesV7.map(func(w : Website) : Website {
               if (w.id == websiteId) {
                 { w with indexStatus = #error; lastCrawledAt = ?now }
               } else w
@@ -2593,7 +2903,7 @@ actor {
     for (entry in userClickHistory.vals()) {
       if (entry.0 == email) {
         for (url in entry.1.vals()) {
-          for (site in websitesV5.vals()) {
+          for (site in websitesV7.vals()) {
             // Match on exact URL or URL prefix (handles trailing slashes)
             // Check if the clicked URL matches this site's base URL (exact match only)
             if (site.url == url) {
@@ -2668,7 +2978,7 @@ actor {
 
   public query func getDiscoverFeed(emailOpt : ?Text) : async DiscoverFeed {
     // ── Eligibility filter (same as searchWebsites) ──────────────────────────
-    let eligible = websitesV5.filter(func(w : Website) : Bool {
+    let eligible = websitesV7.filter(func(w : Website) : Bool {
       if (w.status != #approved) return false;
       if (w.isSeed) return true;
       switch (w.verificationStatus) {

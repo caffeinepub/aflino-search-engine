@@ -121,7 +121,8 @@ export interface Website {
     url: string;
     status: WebsiteStatus;
     title: string;
-    ownerPrincipal: Principal;
+    ownerId: string;
+    ownerPrincipal?: Principal;
     approvedAt?: bigint;
     verificationToken: string;
     submittedAt: bigint;
@@ -129,6 +130,20 @@ export interface Website {
     isSeed: boolean;
     keywords: Array<string>;
     isVerified: boolean;
+    indexStatus?: string;
+    sitemapUrl?: string;
+    lastCheckedAt?: bigint;
+    lastCrawledAt?: bigint;
+    ownershipStatus: string;
+    verificationStatus: string;
+    lastVerifiedAt?: bigint;
+    verificationExpiryAt?: bigint;
+    ownerHistory: Array<string>;
+    adminBoost: bigint;
+    clicks: bigint;
+    impressions: bigint;
+    spamScore: bigint;
+    seoScore: bigint;
 }
 export interface http_header {
     value: string;
@@ -992,6 +1007,38 @@ export class Backend implements backendInterface {
             return result as string[];
         }
     }
+    async recalculateSpamScore(arg0: bigint): Promise<bigint> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).recalculateSpamScore(arg0);
+                return result as bigint;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).recalculateSpamScore(arg0);
+            return result as bigint;
+        }
+    }
+    async recalculateAllSpamScores(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await (this.actor as any).recalculateAllSpamScores();
+                return result as bigint;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (this.actor as any).recalculateAllSpamScores();
+            return result as bigint;
+        }
+    }
     async getDiscoverFeed(arg0: [string] | []): Promise<import("./backend.d").DiscoverFeed> {
         if (this.processError) {
             try {
@@ -1084,46 +1131,35 @@ function from_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uin
         email: value.email
     };
 }
-function from_candid_record_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    id: bigint;
-    url: string;
-    status: _WebsiteStatus;
-    title: string;
-    ownerPrincipal: Principal;
-    approvedAt: [] | [bigint];
-    verificationToken: string;
-    submittedAt: bigint;
-    description: string;
-    isSeed: boolean;
-    keywords: Array<string>;
-    isVerified: boolean;
-}): {
-    id: bigint;
-    url: string;
-    status: WebsiteStatus;
-    title: string;
-    ownerPrincipal: Principal;
-    approvedAt?: bigint;
-    verificationToken: string;
-    submittedAt: bigint;
-    description: string;
-    isSeed: boolean;
-    keywords: Array<string>;
-    isVerified: boolean;
-} {
+function from_candid_record_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: any): Website {
     return {
         id: value.id,
         url: value.url,
         status: from_candid_WebsiteStatus_n3(_uploadFile, _downloadFile, value.status),
         title: value.title,
-        ownerPrincipal: value.ownerPrincipal,
-        approvedAt: record_opt_to_undefined(from_candid_opt_n5(_uploadFile, _downloadFile, value.approvedAt)),
-        verificationToken: value.verificationToken,
+        ownerId: value.ownerId ?? "",
+        ownerPrincipal: value.ownerPrincipal?.[0] ?? undefined,
+        approvedAt: value.approvedAt?.length > 0 ? value.approvedAt[0] : undefined,
+        verificationToken: value.verificationToken ?? "",
         submittedAt: value.submittedAt,
         description: value.description,
         isSeed: value.isSeed,
-        keywords: value.keywords,
-        isVerified: value.isVerified
+        keywords: value.keywords ?? [],
+        isVerified: value.isVerified,
+        indexStatus: value.indexStatus?.[0] ? Object.keys(value.indexStatus[0])[0] : undefined,
+        sitemapUrl: value.sitemapUrl?.[0] ?? undefined,
+        lastCheckedAt: value.lastCheckedAt?.[0] ?? undefined,
+        lastCrawledAt: value.lastCrawledAt?.[0] ?? undefined,
+        ownershipStatus: value.ownershipStatus ? Object.keys(value.ownershipStatus)[0] : "active",
+        verificationStatus: value.verificationStatus ? Object.keys(value.verificationStatus)[0] : "pending",
+        lastVerifiedAt: value.lastVerifiedAt?.[0] ?? undefined,
+        verificationExpiryAt: value.verificationExpiryAt?.[0] ?? undefined,
+        ownerHistory: value.ownerHistory ?? [],
+        adminBoost: value.adminBoost ?? BigInt(0),
+        clicks: value.clicks ?? BigInt(0),
+        impressions: value.impressions ?? BigInt(0),
+        spamScore: value.spamScore ?? BigInt(0),
+        seoScore: value.seoScore ?? BigInt(0),
     };
 }
 function from_candid_record_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {

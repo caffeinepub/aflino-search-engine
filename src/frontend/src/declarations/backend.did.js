@@ -26,6 +26,10 @@ export const Website = IDL.Record({
   'isSeed' : IDL.Bool,
   'keywords' : IDL.Vec(IDL.Text),
   'isVerified' : IDL.Bool,
+  'clicks' : IDL.Nat,
+  'impressions' : IDL.Nat,
+  'spamScore' : IDL.Nat,
+  'seoScore' : IDL.Nat,
 });
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
@@ -232,6 +236,8 @@ export const idlService = IDL.Service({
       [],
     ),
   'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+  'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
+  'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
 });
 
 export const idlInitArgs = [];
@@ -255,6 +261,9 @@ export const idlFactory = ({ IDL }) => {
     'isSeed' : IDL.Bool,
     'keywords' : IDL.Vec(IDL.Text),
     'isVerified' : IDL.Bool,
+    'clicks' : IDL.Nat,
+    'impressions' : IDL.Nat,
+    'spamScore' : IDL.Nat,
   });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
@@ -454,6 +463,8 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+    'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
+    'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
   });
 };
 

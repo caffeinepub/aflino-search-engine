@@ -63,6 +63,9 @@ export interface Website {
     // V5 Analytics
     clicks: bigint;
     impressions: bigint;
+    // V6 Spam Detection
+    spamScore: bigint;
+    seoScore: bigint;
 }
 export interface http_header {
     value: string;
@@ -224,4 +227,6 @@ export interface backendInterface {
     getUserClickHistory(email: string): Promise<Array<string>>;
     refreshUserInterests(email: string): Promise<void>;
     getUserInterests(email: string): Promise<Array<string>>;
+    recalculateSpamScore(websiteId: bigint): Promise<bigint>;
+    recalculateAllSpamScores(): Promise<bigint>;
 }

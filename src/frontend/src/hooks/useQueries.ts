@@ -840,3 +840,35 @@ export function useGetDiscoverFeed(email?: string | null) {
     staleTime: 5 * 60 * 1000, // 5 minutes — React Query refresh strategy (Option B)
   });
 }
+
+// ── Spam Score hooks ──────────────────────────────────────────────────────────
+
+export function useRecalculateSpamScore() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).recalculateSpamScore(id) as Promise<bigint>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+    },
+  });
+}
+
+export function useRecalculateAllSpamScores() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actor as any).recalculateAllSpamScores() as Promise<bigint>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+    },
+  });
+}

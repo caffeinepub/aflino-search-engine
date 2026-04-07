@@ -121,6 +121,10 @@ export interface Website {
   'verificationExpiryAt' : [] | [bigint],
   'ownerHistory' : Array<string>,
   'adminBoost' : bigint,
+  'clicks' : bigint,
+  'impressions' : bigint,
+  'spamScore' : bigint,
+  'seoScore' : bigint,
 }
 export type WebsiteStatus = { 'pending' : null } |
   { 'approved' : null } |
@@ -196,6 +200,8 @@ export interface _SERVICE {
     Campaign
   >,
   'verifyDomain' : ActorMethod<[bigint], boolean>,
+  'recalculateSpamScore' : ActorMethod<[bigint], bigint>,
+  'recalculateAllSpamScores' : ActorMethod<[], bigint>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

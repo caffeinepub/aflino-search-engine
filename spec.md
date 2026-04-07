@@ -1,38 +1,48 @@
 # Aflino Search Engine
 
 ## Current State
-The Website model stores clicks and impressions as external `[(Text, Nat)]` arrays (`clickCounts`, `impressionCounts`) keyed by URL. `recordClick(url)` and `recordImpression(url)` mutate these arrays. Ranking reads them via `getClicks(url)` and `getImpressions(url)` helper functions. This creates a split source of truth.
+
+- Website model is at V6 with fields: `clicks`, `impressions`, `spamScore` (plus all prior fields)
+- `calculateSpamScore()` is the pattern for stored per-website quality scores
+- `searchWebsites()` ranking ends with `score += site.adminBoost`
+- No `seoScore` field exists on the Website type
+- Migration chain: V1 → V2 → V3 → V4 → V5 → V6 (all in `postupgrade`)
 
 ## Requested Changes (Diff)
 
 ### Add
-- `clicks : Nat` and `impressions : Nat` fields on the `Website` type
-- `WebsiteV4Legacy` type (old Website shape, used as migration source)
-- `websitesV4Legacy` stable var (renamed from `websitesV4`)
-- `websitesV5` stable var (new live array)
-- `migrateV4toV5()` migration function: maps `clickCounts[url]` → `website.clicks`, `impressionCounts[url]` → `website.impressions` (defaults to 0 if not found)
-- V5 step in `postupgrade`
+- `seoScore : Nat` field on the `Website` type (V7 migration, existing sites default to 0)
+- `calculateSeoScore(url, title, description, keywords, approvedAt, isSeed)` private function — returns 0–100
+- SEO ranking signal: `finalScore += seoScore / 5` (integer math equivalent of `* 0.2`)
+- `WebsiteV6Legacy` type alias for migration
+- V7 migration step in `postupgrade`
 
 ### Modify
-- `recordClick(url)`: now increments `website.clicks` directly via `websitesV5.map()`
-- `recordImpression(url)`: now increments `website.impressions` directly via `websitesV5.map()`
-- `searchWebsites`: reads `site.clicks` and `site.impressions` instead of calling helper functions
-- `submitWebsite` and `importSeedData`: new Website records include `clicks = 0; impressions = 0;`
-- `getCrawlPriority`: uses `site.clicks` instead of `getClicks(site.url)`
-- `postupgrade` Step 3: now writes into `websitesV4Legacy`
-- `migrateV3toV4`: return type changed to `WebsiteV4Legacy`
+- `submitWebsite` — compute and store `seoScore` on creation
+- `approveWebsite` — recompute `seoScore` at approval time
+- `editWebsite` (if exists) — recompute `seoScore` on content update
+- `updateSitemap` (if exists) — recompute `seoScore` on sitemap update
+- `recalculateSpamScore` — also recompute `seoScore` at same time (admin-triggered)
+- `recalculateAllSpamScores` — also recompute all `seoScore`s
+- All Website construction sites — add `seoScore = 0` default
+- `backend.d.ts` / `backend.ts` — add `seoScore` to `Website` interface
 
 ### Remove
-- `var clickCounts : [(Text, Nat)]` (kept as empty stable var for upgrade compatibility but no longer written to)
-- `var impressionCounts : [(Text, Nat)]` (same)
-- `getClicks(url)` helper function
-- `getImpressions(url)` helper function
+- Nothing
 
 ## Implementation Plan
-1. Extend `Website` type with `clicks` and `impressions` fields
-2. Add `WebsiteV4Legacy` type matching old shape
-3. Rename `websitesV4` → `websitesV4Legacy`, add `websitesV5` as new live array
-4. Add `migrateV4toV5` function
-5. Update `postupgrade` chain: V3→V4 writes into `websitesV4Legacy`; new V5 step reads `websitesV4Legacy` + external arrays, populates `websitesV5`
-6. Update `recordClick`, `recordImpression`, ranking, crawler priority, and all Website creation sites
-7. Remove `getClicks`/`getImpressions` helpers
+
+1. Add `WebsiteV6Legacy` type (alias of current `Website` minus `seoScore`)
+2. Add `seoScore : Nat` to `Website` type
+3. Update `websitesV6` stable var reference to `websitesV7`
+4. Implement `calculateSeoScore()` with 5 signals:
+   - Title length optimal (30–60 chars) → +20
+   - Description present (>= 50 chars) → +20
+   - Keywords relevant (>= 3 keywords) → +20
+   - HTTPS enabled (url starts with https://) → +20
+   - Page freshness (approved within last 90 days) → +20
+   - Seed sites get 100 (fully trusted)
+5. Call `calculateSeoScore()` in: `submitWebsite`, `approveWebsite`, `editWebsite`, `updateSitemap`, `recalculateSpamScore`, `recalculateAllSpamScores`, seed website creation
+6. Add `score += site.seoScore / 5` to `searchWebsites` scoring loop after adminBoost
+7. Add V7 migration step in `postupgrade`
+8. Update `backend.d.ts` and `backend.ts` to include `seoScore` on the Website interface
