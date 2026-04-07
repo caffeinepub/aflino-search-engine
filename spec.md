@@ -1,48 +1,40 @@
 # Aflino Search Engine
 
 ## Current State
-
-- Website model is at V6 with fields: `clicks`, `impressions`, `spamScore` (plus all prior fields)
-- `calculateSpamScore()` is the pattern for stored per-website quality scores
-- `searchWebsites()` ranking ends with `score += site.adminBoost`
-- No `seoScore` field exists on the Website type
-- Migration chain: V1 → V2 → V3 → V4 → V5 → V6 (all in `postupgrade`)
+- `getAdsForSearch()` uses a simple formula: `adScore = bidAmount * keywordMatchCount`
+- No CTR component in ad scoring
+- Relevance is keyword-only (token overlap with campaign.keywords)
+- Ad badge displays `"Ad"` in a grey pill
+- `adsEnabled = false` by default (admin-controlled)
+- Max 2 ads returned and shown
 
 ## Requested Changes (Diff)
 
 ### Add
-- `seoScore : Nat` field on the `Website` type (V7 migration, existing sites default to 0)
-- `calculateSeoScore(url, title, description, keywords, approvedAt, isSeed)` private function — returns 0–100
-- SEO ranking signal: `finalScore += seoScore / 5` (integer math equivalent of `* 0.2`)
-- `WebsiteV6Legacy` type alias for migration
-- V7 migration step in `postupgrade`
+- CTR signal in ad scoring: `(clicks * 1000) / impressions` (integer math, zero-safe)
+- URL relevance signal: check if any query token appears in `destinationUrl`
+- Name relevance signal: check if any query token appears in campaign `name`
+- Combined `keywordMatches` = keyword token matches + url matches + name matches
+- `"Sponsored"` badge (blue #006AFF) replacing the `"Ad"` grey badge in frontend
 
 ### Modify
-- `submitWebsite` — compute and store `seoScore` on creation
-- `approveWebsite` — recompute `seoScore` at approval time
-- `editWebsite` (if exists) — recompute `seoScore` on content update
-- `updateSitemap` (if exists) — recompute `seoScore` on sitemap update
-- `recalculateSpamScore` — also recompute `seoScore` at same time (admin-triggered)
-- `recalculateAllSpamScores` — also recompute all `seoScore`s
-- All Website construction sites — add `seoScore = 0` default
-- `backend.d.ts` / `backend.ts` — add `seoScore` to `Website` interface
+- `getAdsForSearch()` backend function: replace `score = bidAmount * keywordMatchScore` with:
+  `adScore = (bidAmount * 10) + (CTR * 1000) + (keywordMatches * 50)`
+  where CTR = `(clicks * 1000) / impressions` (integer math, impressions=0 → CTR=0)
+  and keywordMatches = keyword + URL + name token matches
+- `SponsoredSection` component in `SearchResultsPage.tsx`: replace grey `"Ad"` badge with blue `"Sponsored"` badge (#006AFF)
 
 ### Remove
-- Nothing
+- Old simple `score = bidAmount * keywordMatchScore` formula
+- Grey `"Ad"` badge styling
 
 ## Implementation Plan
-
-1. Add `WebsiteV6Legacy` type (alias of current `Website` minus `seoScore`)
-2. Add `seoScore : Nat` to `Website` type
-3. Update `websitesV6` stable var reference to `websitesV7`
-4. Implement `calculateSeoScore()` with 5 signals:
-   - Title length optimal (30–60 chars) → +20
-   - Description present (>= 50 chars) → +20
-   - Keywords relevant (>= 3 keywords) → +20
-   - HTTPS enabled (url starts with https://) → +20
-   - Page freshness (approved within last 90 days) → +20
-   - Seed sites get 100 (fully trusted)
-5. Call `calculateSeoScore()` in: `submitWebsite`, `approveWebsite`, `editWebsite`, `updateSitemap`, `recalculateSpamScore`, `recalculateAllSpamScores`, seed website creation
-6. Add `score += site.seoScore / 5` to `searchWebsites` scoring loop after adminBoost
-7. Add V7 migration step in `postupgrade`
-8. Update `backend.d.ts` and `backend.ts` to include `seoScore` on the Website interface
+1. Update `getAdsForSearch()` in `main.mo`:
+   - Compute `keywordMatches` from 3 sources: campaign.keywords, destinationUrl, campaign.name
+   - Compute CTR as `(c.clicks * 1000) / c.impressions` (guard impressions == 0)
+   - Apply formula: `adScore = (c.bidAmount * 10) + ctr + (keywordMatches * 50)`
+   - Keep `adsEnabled` guard unchanged (FALSE by default)
+   - Keep max 2 ads cap unchanged
+2. Update `SponsoredSection` in `SearchResultsPage.tsx`:
+   - Replace `"Ad"` grey badge with `"Sponsored"` badge styled with `color: #006AFF`, `border: 1px solid #006AFF`
+   - No structural changes to the component

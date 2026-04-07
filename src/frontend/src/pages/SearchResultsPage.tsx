@@ -153,8 +153,15 @@ function SponsoredSection({
             className="px-4 py-3 flex items-start gap-3"
             data-ocid="search.sponsored.placeholder"
           >
-            <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded border border-[#D1D5DB] text-[9px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
-              Ad
+            <span
+              className="flex-shrink-0 mt-0.5 px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+              style={{
+                color: "#006AFF",
+                border: "1px solid #006AFF",
+                backgroundColor: "#EBF3FF",
+              }}
+            >
+              Sponsored
             </span>
             <div>
               <p className="text-sm font-medium text-[#374151]">
@@ -185,8 +192,15 @@ function SponsoredSection({
                 }`}
                 data-ocid={`search.sponsored.item.${i + 1}`}
               >
-                <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded border border-[#D1D5DB] text-[9px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
-                  Ad
+                <span
+                  className="flex-shrink-0 mt-0.5 px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                  style={{
+                    color: "#006AFF",
+                    border: "1px solid #006AFF",
+                    backgroundColor: "#EBF3FF",
+                  }}
+                >
+                  Sponsored
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs text-[#22C55E] truncate mb-0.5">

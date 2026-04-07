@@ -2291,14 +2291,24 @@ actor {
           switch (getAdvertiser(c.advertiserEmail)) {
             case (?advertiser) {
               if (advertiser.balance > 0) {
-                var keywordMatchScore = 0;
+                // ── Advanced relevance: keyword + URL + name matches ────────────
+                var keywordMatches = 0;
+                let urlLower = c.destinationUrl.toLower();
+                let nameLower = c.name.toLower();
                 for (token in queryTokens.vals()) {
+                  // Primary: campaign keyword match
                   for (kw in c.keywords.vals()) {
-                    if (kw.toLower().contains(#text token)) { keywordMatchScore += 1 };
+                    if (kw.toLower().contains(#text token)) { keywordMatches += 1 };
                   };
+                  // Partial boost: destination URL match
+                  if (urlLower.contains(#text token)) { keywordMatches += 1 };
+                  // Extra boost: campaign name match
+                  if (nameLower.contains(#text token)) { keywordMatches += 1 };
                 };
-                if (keywordMatchScore > 0) {
-                  let score = c.bidAmount * keywordMatchScore;
+                if (keywordMatches > 0) {
+                  // ── adScore = (bidAmount * 10) + (CTR * 1000) + (keywordMatches * 50) ──
+                  let ctr = if (c.impressions > 0) { (c.clicks * 1000) / c.impressions } else { 0 };
+                  let score = (c.bidAmount * 10) + ctr + (keywordMatches * 50);
                   results := results.concat([{ campaignId = c.id; name = c.name; destinationUrl = c.destinationUrl; bidAmount = c.bidAmount; score }]);
                 };
               };
