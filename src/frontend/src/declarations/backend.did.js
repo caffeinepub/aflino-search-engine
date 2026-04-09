@@ -8,28 +8,65 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const AdvertiserWallet = IDL.Record({
+  'balance' : IDL.Nat,
+  'createdAt' : IDL.Int,
+  'email' : IDL.Text,
+  'totalSpent' : IDL.Nat,
+});
+export const Result = IDL.Variant({
+  'ok' : AdvertiserWallet,
+  'err' : IDL.Text,
+});
 export const WebsiteStatus = IDL.Variant({
   'pending' : IDL.Null,
   'approved' : IDL.Null,
   'rejected' : IDL.Null,
 });
+export const IndexStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'error' : IDL.Null,
+  'notIndexed' : IDL.Null,
+  'indexed' : IDL.Null,
+});
+export const OwnershipStatus = IDL.Variant({
+  'active' : IDL.Null,
+  'expired' : IDL.Null,
+  'reclaimed' : IDL.Null,
+});
+export const VerificationStatus = IDL.Variant({
+  'verified' : IDL.Null,
+  'expired' : IDL.Null,
+  'pending' : IDL.Null,
+});
 export const Website = IDL.Record({
   'id' : IDL.Nat,
   'url' : IDL.Text,
   'status' : WebsiteStatus,
+  'clicks' : IDL.Nat,
   'title' : IDL.Text,
-  'ownerPrincipal' : IDL.Principal,
+  'indexStatus' : IndexStatus,
+  'spamScore' : IDL.Nat,
+  'ownerId' : IDL.Text,
+  'ownerPrincipal' : IDL.Opt(IDL.Principal),
   'approvedAt' : IDL.Opt(IDL.Int),
   'verificationToken' : IDL.Text,
+  'lastVerifiedAt' : IDL.Opt(IDL.Int),
+  'ownershipStatus' : OwnershipStatus,
+  'impressions' : IDL.Nat,
   'submittedAt' : IDL.Int,
   'description' : IDL.Text,
+  'verificationExpiryAt' : IDL.Opt(IDL.Int),
   'isSeed' : IDL.Bool,
   'keywords' : IDL.Vec(IDL.Text),
-  'isVerified' : IDL.Bool,
-  'clicks' : IDL.Nat,
-  'impressions' : IDL.Nat,
-  'spamScore' : IDL.Nat,
   'seoScore' : IDL.Nat,
+  'isVerified' : IDL.Bool,
+  'lastCheckedAt' : IDL.Opt(IDL.Int),
+  'lastCrawledAt' : IDL.Opt(IDL.Int),
+  'ownerHistory' : IDL.Vec(IDL.Text),
+  'verificationStatus' : VerificationStatus,
+  'adminBoost' : IDL.Nat,
+  'sitemapUrl' : IDL.Opt(IDL.Text),
 });
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
@@ -55,6 +92,14 @@ export const Campaign = IDL.Record({
   'dailyBudget' : IDL.Nat,
   'destinationUrl' : IDL.Text,
   'budget' : IDL.Nat,
+});
+export const Result_2 = IDL.Variant({
+  'ok' : IDL.Record({
+    'orderId' : IDL.Text,
+    'amount' : IDL.Nat,
+    'keyId' : IDL.Text,
+  }),
+  'err' : IDL.Text,
 });
 export const AdResult = IDL.Record({
   'name' : IDL.Text,
@@ -87,6 +132,24 @@ export const BlacklistEntry = IDL.Record({
   'reason' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'email' : IDL.Text });
+export const DiscoverFeed = IDL.Record({
+  'popularDomains' : IDL.Vec(Website),
+  'recentlyIndexed' : IDL.Vec(Website),
+  'trending' : IDL.Vec(Website),
+  'recommendedForYou' : IDL.Vec(Website),
+});
+export const PageStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'error' : IDL.Null,
+  'indexed' : IDL.Null,
+});
+export const Page = IDL.Record({
+  'id' : IDL.Nat,
+  'url' : IDL.Text,
+  'status' : PageStatus,
+  'websiteId' : IDL.Nat,
+  'addedAt' : IDL.Int,
+});
 export const SecurityLog = IDL.Record({
   'id' : IDL.Nat,
   'logType' : IDL.Text,
@@ -99,13 +162,53 @@ export const Stats = IDL.Record({
   'pending' : IDL.Nat,
   'approved' : IDL.Nat,
 });
+export const TransactionType = IDL.Variant({
+  'credit' : IDL.Null,
+  'debit' : IDL.Null,
+});
+export const TransactionReason = IDL.Variant({
+  'topup' : IDL.Null,
+  'ad_click' : IDL.Null,
+  'refund' : IDL.Null,
+});
+export const Transaction = IDL.Record({
+  'id' : IDL.Nat,
+  'createdAt' : IDL.Int,
+  'type' : TransactionType,
+  'email' : IDL.Text,
+  'amount' : IDL.Nat,
+  'reason' : TransactionReason,
+});
 export const SeedEntry = IDL.Record({
   'url' : IDL.Text,
   'title' : IDL.Text,
   'description' : IDL.Text,
   'keywords' : IDL.Vec(IDL.Text),
 });
-export const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+export const MatchType = IDL.Variant({
+  'exact' : IDL.Null,
+  'broad' : IDL.Null,
+  'phrase' : IDL.Null,
+});
+export const Ad = IDL.Record({
+  'id' : IDL.Nat,
+  'matchType' : MatchType,
+  'clicks' : IDL.Nat,
+  'title' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'impressions' : IDL.Nat,
+  'description' : IDL.Text,
+  'bidAmount' : IDL.Nat,
+  'keywords' : IDL.Vec(IDL.Text),
+  'adGroupId' : IDL.Nat,
+  'destinationUrl' : IDL.Text,
+  'negativeKeywords' : IDL.Vec(IDL.Text),
+});
+export const AdMatchResult = IDL.Record({
+  'ad' : Ad,
+  'keywordScore' : IDL.Nat,
+});
+export const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
 export const http_header = IDL.Record({
   'value' : IDL.Text,
   'name' : IDL.Text,
@@ -126,13 +229,16 @@ export const TransformationOutput = IDL.Record({
 });
 
 export const idlService = IDL.Service({
-  '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+  '_initializeAccessControl' : IDL.Func([], [], []),
   'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'addBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result], []),
   'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'addToCrawlQueue' : IDL.Func([IDL.Nat], [], []),
   'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
   'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
   'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'checkAndQueueRecrawl' : IDL.Func([], [IDL.Nat], []),
   'createCampaign' : IDL.Func(
       [
         IDL.Text,
@@ -146,6 +252,8 @@ export const idlService = IDL.Service({
       [Campaign],
       [],
     ),
+  'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_2], []),
+  'createWallet' : IDL.Func([IDL.Text], [AdvertiserWallet], []),
   'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
   'editWebsite' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
@@ -164,6 +272,12 @@ export const idlService = IDL.Service({
   'getBlacklist' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getCrawlQueue' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Nat))],
+      ['query'],
+    ),
+  'getDiscoverFeed' : IDL.Func([IDL.Opt(IDL.Text)], [DiscoverFeed], ['query']),
   'getFlaggedDomains' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
   'getMyAdvertiserProfile' : IDL.Func(
       [IDL.Text],
@@ -172,30 +286,42 @@ export const idlService = IDL.Service({
     ),
   'getMyCampaigns' : IDL.Func([IDL.Text], [IDL.Vec(Campaign)], []),
   'getMyWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+  'getMyWebsitesByEmail' : IDL.Func([IDL.Text], [IDL.Vec(Website)], ['query']),
+  'getPagesForWebsite' : IDL.Func([IDL.Nat], [IDL.Vec(Page)], ['query']),
   'getPendingWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
   'getSecurityLogs' : IDL.Func([], [IDL.Vec(SecurityLog)], ['query']),
   'getStats' : IDL.Func([], [Stats], ['query']),
+  'getTransactions' : IDL.Func([IDL.Text], [IDL.Vec(Transaction)], ['query']),
+  'getUserClickHistory' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
+  'getUserInterests' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
+  'getUserSearchHistory' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
   'getVerificationToken' : IDL.Func([IDL.Nat], [IDL.Text], ['query']),
+  'getWallet' : IDL.Func([IDL.Text], [IDL.Opt(AdvertiserWallet)], ['query']),
   'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
-  'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result], []),
+  'rankAds' : IDL.Func([IDL.Text], [IDL.Vec(AdMatchResult)], ['query']),
+  'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
+  'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
+  'reclaimDomain' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
+  'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+  'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
   'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
-  'getUserSearchHistory' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
-  'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
-  'getUserClickHistory' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
-  'recordUserClick' : IDL.Func([IDL.Text, IDL.Text], [], []),
-  'refreshUserInterests' : IDL.Func([IDL.Text], [], []),
-  'getUserInterests' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
+  'recordAdImpressionV2' : IDL.Func([IDL.Nat], [], []),
   'recordClick' : IDL.Func([IDL.Text], [], []),
+  'recordImpression' : IDL.Func([IDL.Text], [], []),
+  'recordUserClick' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'refreshUserInterests' : IDL.Func([IDL.Text], [], []),
   'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
   'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
   'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
+  'requestIndexing' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
   'resumeCampaign' : IDL.Func([IDL.Nat], [], []),
   'reviewFlaggedDomain' : IDL.Func(
       [
@@ -209,11 +335,18 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'runCrawler' : IDL.Func([], [IDL.Nat], []),
+  'runOwnershipCleanup' : IDL.Func([], [IDL.Nat], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-  'searchWebsites' : IDL.Func([IDL.Text, IDL.Opt(IDL.Text)], [IDL.Vec(Website)], ['query']),
+  'searchWebsites' : IDL.Func(
+      [IDL.Text, IDL.Opt(IDL.Text)],
+      [IDL.Vec(Website)],
+      ['query'],
+    ),
+  'setAdminBoost' : IDL.Func([IDL.Nat, IDL.Nat], [Website], []),
   'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
   'submitWebsite' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
       [Website],
       [],
     ),
@@ -235,35 +368,76 @@ export const idlService = IDL.Service({
       [Campaign],
       [],
     ),
+  'updateLastCrawledAt' : IDL.Func([IDL.Nat], [], []),
+  'updatePageStatus' : IDL.Func([IDL.Nat, PageStatus], [], []),
+  'updateSitemap' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
   'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
-  'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
-  'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
+  'verifyRazorpayPayment' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [Result],
+      [],
+    ),
 });
 
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const AdvertiserWallet = IDL.Record({
+    'balance' : IDL.Nat,
+    'createdAt' : IDL.Int,
+    'email' : IDL.Text,
+    'totalSpent' : IDL.Nat,
+  });
+  const Result = IDL.Variant({ 'ok' : AdvertiserWallet, 'err' : IDL.Text });
   const WebsiteStatus = IDL.Variant({
     'pending' : IDL.Null,
     'approved' : IDL.Null,
     'rejected' : IDL.Null,
   });
+  const IndexStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'error' : IDL.Null,
+    'notIndexed' : IDL.Null,
+    'indexed' : IDL.Null,
+  });
+  const OwnershipStatus = IDL.Variant({
+    'active' : IDL.Null,
+    'expired' : IDL.Null,
+    'reclaimed' : IDL.Null,
+  });
+  const VerificationStatus = IDL.Variant({
+    'verified' : IDL.Null,
+    'expired' : IDL.Null,
+    'pending' : IDL.Null,
+  });
   const Website = IDL.Record({
     'id' : IDL.Nat,
     'url' : IDL.Text,
     'status' : WebsiteStatus,
+    'clicks' : IDL.Nat,
     'title' : IDL.Text,
-    'ownerPrincipal' : IDL.Principal,
+    'indexStatus' : IndexStatus,
+    'spamScore' : IDL.Nat,
+    'ownerId' : IDL.Text,
+    'ownerPrincipal' : IDL.Opt(IDL.Principal),
     'approvedAt' : IDL.Opt(IDL.Int),
     'verificationToken' : IDL.Text,
+    'lastVerifiedAt' : IDL.Opt(IDL.Int),
+    'ownershipStatus' : OwnershipStatus,
+    'impressions' : IDL.Nat,
     'submittedAt' : IDL.Int,
     'description' : IDL.Text,
+    'verificationExpiryAt' : IDL.Opt(IDL.Int),
     'isSeed' : IDL.Bool,
     'keywords' : IDL.Vec(IDL.Text),
+    'seoScore' : IDL.Nat,
     'isVerified' : IDL.Bool,
-    'clicks' : IDL.Nat,
-    'impressions' : IDL.Nat,
-    'spamScore' : IDL.Nat,
+    'lastCheckedAt' : IDL.Opt(IDL.Int),
+    'lastCrawledAt' : IDL.Opt(IDL.Int),
+    'ownerHistory' : IDL.Vec(IDL.Text),
+    'verificationStatus' : VerificationStatus,
+    'adminBoost' : IDL.Nat,
+    'sitemapUrl' : IDL.Opt(IDL.Text),
   });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
@@ -289,6 +463,14 @@ export const idlFactory = ({ IDL }) => {
     'dailyBudget' : IDL.Nat,
     'destinationUrl' : IDL.Text,
     'budget' : IDL.Nat,
+  });
+  const Result_2 = IDL.Variant({
+    'ok' : IDL.Record({
+      'orderId' : IDL.Text,
+      'amount' : IDL.Nat,
+      'keyId' : IDL.Text,
+    }),
+    'err' : IDL.Text,
   });
   const AdResult = IDL.Record({
     'name' : IDL.Text,
@@ -321,6 +503,24 @@ export const idlFactory = ({ IDL }) => {
     'reason' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'email' : IDL.Text });
+  const DiscoverFeed = IDL.Record({
+    'popularDomains' : IDL.Vec(Website),
+    'recentlyIndexed' : IDL.Vec(Website),
+    'trending' : IDL.Vec(Website),
+    'recommendedForYou' : IDL.Vec(Website),
+  });
+  const PageStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'error' : IDL.Null,
+    'indexed' : IDL.Null,
+  });
+  const Page = IDL.Record({
+    'id' : IDL.Nat,
+    'url' : IDL.Text,
+    'status' : PageStatus,
+    'websiteId' : IDL.Nat,
+    'addedAt' : IDL.Int,
+  });
   const SecurityLog = IDL.Record({
     'id' : IDL.Nat,
     'logType' : IDL.Text,
@@ -333,13 +533,50 @@ export const idlFactory = ({ IDL }) => {
     'pending' : IDL.Nat,
     'approved' : IDL.Nat,
   });
+  const TransactionType = IDL.Variant({
+    'credit' : IDL.Null,
+    'debit' : IDL.Null,
+  });
+  const TransactionReason = IDL.Variant({
+    'topup' : IDL.Null,
+    'ad_click' : IDL.Null,
+    'refund' : IDL.Null,
+  });
+  const Transaction = IDL.Record({
+    'id' : IDL.Nat,
+    'createdAt' : IDL.Int,
+    'type' : TransactionType,
+    'email' : IDL.Text,
+    'amount' : IDL.Nat,
+    'reason' : TransactionReason,
+  });
   const SeedEntry = IDL.Record({
     'url' : IDL.Text,
     'title' : IDL.Text,
     'description' : IDL.Text,
     'keywords' : IDL.Vec(IDL.Text),
   });
-  const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const MatchType = IDL.Variant({
+    'exact' : IDL.Null,
+    'broad' : IDL.Null,
+    'phrase' : IDL.Null,
+  });
+  const Ad = IDL.Record({
+    'id' : IDL.Nat,
+    'matchType' : MatchType,
+    'clicks' : IDL.Nat,
+    'title' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'impressions' : IDL.Nat,
+    'description' : IDL.Text,
+    'bidAmount' : IDL.Nat,
+    'keywords' : IDL.Vec(IDL.Text),
+    'adGroupId' : IDL.Nat,
+    'destinationUrl' : IDL.Text,
+    'negativeKeywords' : IDL.Vec(IDL.Text),
+  });
+  const AdMatchResult = IDL.Record({ 'ad' : Ad, 'keywordScore' : IDL.Nat });
+  const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
   const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const http_request_result = IDL.Record({
     'status' : IDL.Nat,
@@ -357,13 +594,16 @@ export const idlFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
-    '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
+    '_initializeAccessControl' : IDL.Func([], [], []),
     'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'addBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result], []),
     'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'addToCrawlQueue' : IDL.Func([IDL.Nat], [], []),
     'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
     'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
     'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'checkAndQueueRecrawl' : IDL.Func([], [IDL.Nat], []),
     'createCampaign' : IDL.Func(
         [
           IDL.Text,
@@ -377,6 +617,8 @@ export const idlFactory = ({ IDL }) => {
         [Campaign],
         [],
       ),
+    'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_2], []),
+    'createWallet' : IDL.Func([IDL.Text], [AdvertiserWallet], []),
     'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
     'editWebsite' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
@@ -395,6 +637,16 @@ export const idlFactory = ({ IDL }) => {
     'getBlacklist' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getCrawlQueue' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Nat))],
+        ['query'],
+      ),
+    'getDiscoverFeed' : IDL.Func(
+        [IDL.Opt(IDL.Text)],
+        [DiscoverFeed],
+        ['query'],
+      ),
     'getFlaggedDomains' : IDL.Func([], [IDL.Vec(BlacklistEntry)], ['query']),
     'getMyAdvertiserProfile' : IDL.Func(
         [IDL.Text],
@@ -403,26 +655,54 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getMyCampaigns' : IDL.Func([IDL.Text], [IDL.Vec(Campaign)], []),
     'getMyWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
+    'getMyWebsitesByEmail' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(Website)],
+        ['query'],
+      ),
+    'getPagesForWebsite' : IDL.Func([IDL.Nat], [IDL.Vec(Page)], ['query']),
     'getPendingWebsites' : IDL.Func([], [IDL.Vec(Website)], ['query']),
     'getSecurityLogs' : IDL.Func([], [IDL.Vec(SecurityLog)], ['query']),
     'getStats' : IDL.Func([], [Stats], ['query']),
+    'getTransactions' : IDL.Func([IDL.Text], [IDL.Vec(Transaction)], ['query']),
+    'getUserClickHistory' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(IDL.Text)],
+        ['query'],
+      ),
+    'getUserInterests' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
+    'getUserSearchHistory' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(IDL.Text)],
+        ['query'],
+      ),
     'getVerificationToken' : IDL.Func([IDL.Nat], [IDL.Text], ['query']),
+    'getWallet' : IDL.Func([IDL.Text], [IDL.Opt(AdvertiserWallet)], ['query']),
     'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
-    'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result], []),
+    'rankAds' : IDL.Func([IDL.Text], [IDL.Vec(AdMatchResult)], ['query']),
+    'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
+    'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
+    'reclaimDomain' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
+    'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+    'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
     'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
-    'getUserSearchHistory' : IDL.Func([IDL.Text], [IDL.Vec(IDL.Text)], ['query']),
-    'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'recordAdImpressionV2' : IDL.Func([IDL.Nat], [], []),
     'recordClick' : IDL.Func([IDL.Text], [], []),
+    'recordImpression' : IDL.Func([IDL.Text], [], []),
+    'recordUserClick' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'refreshUserInterests' : IDL.Func([IDL.Text], [], []),
     'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
     'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
     'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
+    'requestIndexing' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
     'resumeCampaign' : IDL.Func([IDL.Nat], [], []),
     'reviewFlaggedDomain' : IDL.Func(
         [
@@ -436,11 +716,18 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'runCrawler' : IDL.Func([], [IDL.Nat], []),
+    'runOwnershipCleanup' : IDL.Func([], [IDL.Nat], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-    'searchWebsites' : IDL.Func([IDL.Text, IDL.Opt(IDL.Text)], [IDL.Vec(Website)], ['query']),
+    'searchWebsites' : IDL.Func(
+        [IDL.Text, IDL.Opt(IDL.Text)],
+        [IDL.Vec(Website)],
+        ['query'],
+      ),
+    'setAdminBoost' : IDL.Func([IDL.Nat, IDL.Nat], [Website], []),
     'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
     'submitWebsite' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
         [Website],
         [],
       ),
@@ -462,9 +749,15 @@ export const idlFactory = ({ IDL }) => {
         [Campaign],
         [],
       ),
+    'updateLastCrawledAt' : IDL.Func([IDL.Nat], [], []),
+    'updatePageStatus' : IDL.Func([IDL.Nat, PageStatus], [], []),
+    'updateSitemap' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
     'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
-    'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
-    'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
+    'verifyRazorpayPayment' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [Result],
+        [],
+      ),
   });
 };
 

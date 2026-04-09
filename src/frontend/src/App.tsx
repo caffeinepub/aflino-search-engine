@@ -10,6 +10,7 @@ import {
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
+import AdsDashboardPage from "./pages/AdsDashboardPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import OwnerDashboardPage from "./pages/OwnerDashboardPage";
@@ -188,6 +189,17 @@ const submitRoute = createRoute({
   component: SubmitWebsitePage,
 });
 
+const adsDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/ads-dashboard",
+  beforeLoad: () => {
+    if (!isUserAuthenticated()) {
+      throw redirect({ to: "/login" });
+    }
+  },
+  component: AdsDashboardPage,
+});
+
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "*",
@@ -206,6 +218,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   adminRoute,
   submitRoute,
+  adsDashboardRoute,
   notFoundRoute,
 ]);
 

@@ -89,13 +89,41 @@ export class ExternalBlob {
         return this;
     }
 }
-export interface UserProfile {
-    email: string;
+export interface Ad {
+    id: bigint;
+    matchType: MatchType;
+    clicks: bigint;
+    title: string;
+    createdAt: bigint;
+    impressions: bigint;
+    description: string;
+    bidAmount: bigint;
+    keywords: Array<string>;
+    adGroupId: bigint;
+    destinationUrl: string;
+    negativeKeywords: Array<string>;
 }
+export type Result_2 = {
+    __kind__: "ok";
+    ok: {
+        orderId: string;
+        amount: bigint;
+        keyId: string;
+    };
+} | {
+    __kind__: "err";
+    err: string;
+};
 export interface TransformationOutput {
     status: bigint;
     body: Uint8Array;
     headers: Array<http_header>;
+}
+export interface AdvertiserWallet {
+    balance: bigint;
+    createdAt: bigint;
+    email: string;
+    totalSpent: bigint;
 }
 export interface AdvertiserProfile {
     status: AdvertiserStatus;
@@ -104,55 +132,25 @@ export interface AdvertiserProfile {
     reviewedAt?: bigint;
     email: string;
 }
-export interface BlacklistEntry {
-    status: BlacklistStatus;
-    domain: string;
-    reviewedBy?: string;
-    addedAt: bigint;
-    reason: string;
-}
 export interface Stats {
     total: bigint;
     pending: bigint;
     approved: bigint;
 }
-export interface Website {
+export type Result_1 = {
+    __kind__: "ok";
+    ok: null;
+} | {
+    __kind__: "err";
+    err: string;
+};
+export interface Transaction {
     id: bigint;
-    url: string;
-    status: WebsiteStatus;
-    title: string;
-    ownerId: string;
-    ownerPrincipal?: Principal;
-    approvedAt?: bigint;
-    verificationToken: string;
-    submittedAt: bigint;
-    description: string;
-    isSeed: boolean;
-    keywords: Array<string>;
-    isVerified: boolean;
-    indexStatus?: string;
-    sitemapUrl?: string;
-    lastCheckedAt?: bigint;
-    lastCrawledAt?: bigint;
-    ownershipStatus: string;
-    verificationStatus: string;
-    lastVerifiedAt?: bigint;
-    verificationExpiryAt?: bigint;
-    ownerHistory: Array<string>;
-    adminBoost: bigint;
-    clicks: bigint;
-    impressions: bigint;
-    spamScore: bigint;
-    seoScore: bigint;
-}
-export interface http_header {
-    value: string;
-    name: string;
-}
-export interface http_request_result {
-    status: bigint;
-    body: Uint8Array;
-    headers: Array<http_header>;
+    createdAt: bigint;
+    type: TransactionType;
+    email: string;
+    amount: bigint;
+    reason: TransactionReason;
 }
 export interface SecurityLog {
     id: bigint;
@@ -161,13 +159,13 @@ export interface SecurityLog {
     details: string;
     principalText: string;
 }
-export type Result = {
-    __kind__: "ok";
-    ok: null;
-} | {
-    __kind__: "err";
-    err: string;
-};
+export interface Page {
+    id: bigint;
+    url: string;
+    status: PageStatus;
+    websiteId: bigint;
+    addedAt: bigint;
+}
 export interface TransformationInput {
     context: Uint8Array;
     response: http_request_result;
@@ -194,6 +192,71 @@ export interface AdResult {
     bidAmount: bigint;
     destinationUrl: string;
 }
+export interface BlacklistEntry {
+    status: BlacklistStatus;
+    domain: string;
+    reviewedBy?: string;
+    addedAt: bigint;
+    reason: string;
+}
+export interface Website {
+    id: bigint;
+    url: string;
+    status: WebsiteStatus;
+    clicks: bigint;
+    title: string;
+    indexStatus: IndexStatus;
+    spamScore: bigint;
+    ownerId: string;
+    ownerPrincipal?: Principal;
+    approvedAt?: bigint;
+    verificationToken: string;
+    lastVerifiedAt?: bigint;
+    ownershipStatus: OwnershipStatus;
+    impressions: bigint;
+    submittedAt: bigint;
+    description: string;
+    verificationExpiryAt?: bigint;
+    isSeed: boolean;
+    keywords: Array<string>;
+    seoScore: bigint;
+    isVerified: boolean;
+    lastCheckedAt?: bigint;
+    lastCrawledAt?: bigint;
+    ownerHistory: Array<string>;
+    verificationStatus: VerificationStatus;
+    adminBoost: bigint;
+    sitemapUrl?: string;
+}
+export interface http_header {
+    value: string;
+    name: string;
+}
+export interface http_request_result {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<http_header>;
+}
+export interface AdMatchResult {
+    ad: Ad;
+    keywordScore: bigint;
+}
+export type Result = {
+    __kind__: "ok";
+    ok: AdvertiserWallet;
+} | {
+    __kind__: "err";
+    err: string;
+};
+export interface DiscoverFeed {
+    popularDomains: Array<Website>;
+    recentlyIndexed: Array<Website>;
+    trending: Array<Website>;
+    recommendedForYou: Array<Website>;
+}
+export interface UserProfile {
+    email: string;
+}
 export interface SeedEntry {
     url: string;
     title: string;
@@ -209,6 +272,36 @@ export enum CampaignStatus {
     ended = "ended",
     paused = "paused"
 }
+export enum IndexStatus {
+    pending = "pending",
+    error = "error",
+    notIndexed = "notIndexed",
+    indexed = "indexed"
+}
+export enum MatchType {
+    exact = "exact",
+    broad = "broad",
+    phrase = "phrase"
+}
+export enum OwnershipStatus {
+    active = "active",
+    expired = "expired",
+    reclaimed = "reclaimed"
+}
+export enum PageStatus {
+    pending = "pending",
+    error = "error",
+    indexed = "indexed"
+}
+export enum TransactionReason {
+    topup = "topup",
+    ad_click = "ad_click",
+    refund = "refund"
+}
+export enum TransactionType {
+    credit = "credit",
+    debit = "debit"
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
@@ -219,20 +312,30 @@ export enum Variant_remove_approve_block {
     approve = "approve",
     block = "block"
 }
+export enum VerificationStatus {
+    verified = "verified",
+    expired = "expired",
+    pending = "pending"
+}
 export enum WebsiteStatus {
     pending = "pending",
     approved = "approved",
     rejected = "rejected"
 }
 export interface backendInterface {
-    _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
+    _initializeAccessControl(): Promise<void>;
     addAdvertiserBalance(email: string, amount: bigint): Promise<void>;
+    addBalance(email: string, amount: bigint): Promise<Result>;
     addToBlacklist(domain: string, reason: string): Promise<void>;
+    addToCrawlQueue(websiteId: bigint): Promise<void>;
     applyForAdvertiser(email: string): Promise<void>;
     approveAdvertiser(email: string): Promise<void>;
     approveWebsite(websiteId: bigint): Promise<Website>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    checkAndQueueRecrawl(): Promise<bigint>;
     createCampaign(email: string, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
+    createRazorpayOrder(email: string, amount: bigint): Promise<Result_2>;
+    createWallet(email: string): Promise<AdvertiserWallet>;
     deleteWebsite(websiteId: bigint): Promise<void>;
     editWebsite(websiteId: bigint, title: string, description: string, keywords: Array<string>): Promise<Website>;
     getAdsEnabled(): Promise<boolean>;
@@ -243,55 +346,75 @@ export interface backendInterface {
     getBlacklist(): Promise<Array<BlacklistEntry>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    getCrawlQueue(): Promise<Array<[bigint, bigint]>>;
+    getDiscoverFeed(emailOpt: string | null): Promise<DiscoverFeed>;
     getFlaggedDomains(): Promise<Array<BlacklistEntry>>;
     getMyAdvertiserProfile(email: string): Promise<AdvertiserProfile | null>;
     getMyCampaigns(email: string): Promise<Array<Campaign>>;
     getMyWebsites(): Promise<Array<Website>>;
+    getMyWebsitesByEmail(email: string): Promise<Array<Website>>;
+    getPagesForWebsite(websiteId: bigint): Promise<Array<Page>>;
     getPendingWebsites(): Promise<Array<Website>>;
     getSecurityLogs(): Promise<Array<SecurityLog>>;
     getStats(): Promise<Stats>;
+    getTransactions(email: string): Promise<Array<Transaction>>;
+    getUserClickHistory(email: string): Promise<Array<string>>;
+    getUserInterests(email: string): Promise<Array<string>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getUserSearchHistory(email: string): Promise<Array<string>>;
     getVerificationToken(websiteId: bigint): Promise<string>;
+    getWallet(email: string): Promise<AdvertiserWallet | null>;
     importSeedData(entries: Array<SeedEntry>): Promise<bigint>;
     isCallerAdmin(): Promise<boolean>;
     pauseCampaign(campaignId: bigint): Promise<void>;
-    recordAdClick(campaignId: bigint, userSession: string): Promise<Result>;
+    rankAds(searchQuery: string): Promise<Array<AdMatchResult>>;
+    recalculateAllSpamScores(): Promise<bigint>;
+    recalculateSpamScore(websiteId: bigint): Promise<bigint>;
+    reclaimDomain(websiteId: bigint, newOwnerEmail: string): Promise<Website>;
+    recordAdClick(campaignId: bigint, userSession: string): Promise<Result_1>;
+    recordAdClickV2(adId: bigint, userSession: string): Promise<Result_1>;
     recordAdImpression(campaignId: bigint): Promise<void>;
-    getDiscoverFeed(emailOpt: [string] | []): Promise<import("./backend.d").DiscoverFeed>;
+    recordAdImpressionV2(adId: bigint): Promise<void>;
     recordClick(url: string): Promise<void>;
+    recordImpression(url: string): Promise<void>;
+    recordUserClick(email: string, url: string): Promise<void>;
+    recordUserSearch(email: string, searchQuery: string): Promise<void>;
+    refreshUserInterests(email: string): Promise<void>;
     rejectAdvertiser(email: string): Promise<void>;
     rejectWebsite(websiteId: bigint): Promise<Website>;
     removeFromBlacklist(domain: string): Promise<void>;
+    requestIndexing(websiteId: bigint, pageUrl: string): Promise<Website>;
     resumeCampaign(campaignId: bigint): Promise<void>;
     reviewFlaggedDomain(domain: string, action: Variant_remove_approve_block): Promise<void>;
+    runCrawler(): Promise<bigint>;
+    runOwnershipCleanup(): Promise<bigint>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    searchWebsites(searchQuery: string, emailOpt: [string] | []): Promise<Array<Website>>;
+    searchWebsites(searchQuery: string, emailOpt: string | null): Promise<Array<Website>>;
+    setAdminBoost(websiteId: bigint, boost: bigint): Promise<Website>;
     setAdsEnabled(enabled: boolean): Promise<void>;
-    submitWebsite(url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
+    submitWebsite(ownerId: string, url: string, title: string, description: string, keywords: Array<string>): Promise<Website>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateCampaign(campaignId: bigint, name: string, budget: bigint, dailyBudget: bigint, bidAmount: bigint, keywords: Array<string>, destinationUrl: string): Promise<Campaign>;
+    updateLastCrawledAt(websiteId: bigint): Promise<void>;
+    updatePageStatus(pageId: bigint, status: PageStatus): Promise<void>;
+    updateSitemap(websiteId: bigint, sitemapUrl: string): Promise<Website>;
     verifyDomain(websiteId: bigint): Promise<boolean>;
-    recordUserSearch(email: string, query: string): Promise<void>;
-    recordUserClick(email: string, url: string): Promise<void>;
-    getUserSearchHistory(email: string): Promise<Array<string>>;
-    getUserClickHistory(email: string): Promise<Array<string>>;
-    refreshUserInterests(email: string): Promise<void>;
-    getUserInterests(email: string): Promise<Array<string>>;
+    verifyRazorpayPayment(email: string, orderId: string, paymentId: string, signature: string, amount: bigint): Promise<Result>;
 }
-import type { AdvertiserProfile as _AdvertiserProfile, AdvertiserStatus as _AdvertiserStatus, BlacklistEntry as _BlacklistEntry, BlacklistStatus as _BlacklistStatus, Campaign as _Campaign, CampaignStatus as _CampaignStatus, Result as _Result, UserProfile as _UserProfile, UserRole as _UserRole, Website as _Website, WebsiteStatus as _WebsiteStatus } from "./declarations/backend.did.d.ts";
+import type { Ad as _Ad, AdMatchResult as _AdMatchResult, AdvertiserProfile as _AdvertiserProfile, AdvertiserStatus as _AdvertiserStatus, AdvertiserWallet as _AdvertiserWallet, BlacklistEntry as _BlacklistEntry, BlacklistStatus as _BlacklistStatus, Campaign as _Campaign, CampaignStatus as _CampaignStatus, DiscoverFeed as _DiscoverFeed, IndexStatus as _IndexStatus, MatchType as _MatchType, OwnershipStatus as _OwnershipStatus, Page as _Page, PageStatus as _PageStatus, Result as _Result, Result_1 as _Result_1, Result_2 as _Result_2, Transaction as _Transaction, TransactionReason as _TransactionReason, TransactionType as _TransactionType, UserProfile as _UserProfile, UserRole as _UserRole, VerificationStatus as _VerificationStatus, Website as _Website, WebsiteStatus as _WebsiteStatus } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
-    async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
+    async _initializeAccessControl(): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor._initializeAccessControlWithSecret(arg0);
+                const result = await this.actor._initializeAccessControl();
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor._initializeAccessControlWithSecret(arg0);
+            const result = await this.actor._initializeAccessControl();
             return result;
         }
     }
@@ -309,6 +432,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async addBalance(arg0: string, arg1: bigint): Promise<Result> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addBalance(arg0, arg1);
+                return from_candid_Result_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addBalance(arg0, arg1);
+            return from_candid_Result_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async addToBlacklist(arg0: string, arg1: string): Promise<void> {
         if (this.processError) {
             try {
@@ -320,6 +457,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.addToBlacklist(arg0, arg1);
+            return result;
+        }
+    }
+    async addToCrawlQueue(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addToCrawlQueue(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addToCrawlQueue(arg0);
             return result;
         }
     }
@@ -355,27 +506,41 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.approveWebsite(arg0);
-                return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.approveWebsite(arg0);
-            return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async assignCallerUserRole(arg0: Principal, arg1: UserRole): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n6(this._uploadFile, this._downloadFile, arg1));
+                const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n16(this._uploadFile, this._downloadFile, arg1));
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n6(this._uploadFile, this._downloadFile, arg1));
+            const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n16(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async checkAndQueueRecrawl(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.checkAndQueueRecrawl();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.checkAndQueueRecrawl();
             return result;
         }
     }
@@ -383,14 +548,42 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.createCampaign(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-                return from_candid_Campaign_n8(this._uploadFile, this._downloadFile, result);
+                return from_candid_Campaign_n18(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.createCampaign(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-            return from_candid_Campaign_n8(this._uploadFile, this._downloadFile, result);
+            return from_candid_Campaign_n18(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async createRazorpayOrder(arg0: string, arg1: bigint): Promise<Result_2> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createRazorpayOrder(arg0, arg1);
+                return from_candid_Result_2_n22(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createRazorpayOrder(arg0, arg1);
+            return from_candid_Result_2_n22(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async createWallet(arg0: string): Promise<AdvertiserWallet> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createWallet(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createWallet(arg0);
+            return result;
         }
     }
     async deleteWebsite(arg0: bigint): Promise<void> {
@@ -411,14 +604,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.editWebsite(arg0, arg1, arg2, arg3);
-                return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.editWebsite(arg0, arg1, arg2, arg3);
-            return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async getAdsEnabled(): Promise<boolean> {
@@ -453,154 +646,210 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getAllAdvertiserApplications();
-                return from_candid_vec_n12(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n24(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAllAdvertiserApplications();
-            return from_candid_vec_n12(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n24(this._uploadFile, this._downloadFile, result);
         }
     }
     async getAllCampaigns(): Promise<Array<Campaign>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getAllCampaigns();
-                return from_candid_vec_n16(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAllCampaigns();
-            return from_candid_vec_n16(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
         }
     }
     async getAllWebsites(): Promise<Array<Website>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getAllWebsites();
-                return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAllWebsites();
-            return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
         }
     }
     async getBlacklist(): Promise<Array<BlacklistEntry>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getBlacklist();
-                return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n30(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getBlacklist();
-            return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n30(this._uploadFile, this._downloadFile, result);
         }
     }
     async getCallerUserProfile(): Promise<UserProfile | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getCallerUserProfile();
-                return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n35(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCallerUserProfile();
-            return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n35(this._uploadFile, this._downloadFile, result);
         }
     }
     async getCallerUserRole(): Promise<UserRole> {
         if (this.processError) {
             try {
                 const result = await this.actor.getCallerUserRole();
-                return from_candid_UserRole_n25(this._uploadFile, this._downloadFile, result);
+                return from_candid_UserRole_n36(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCallerUserRole();
-            return from_candid_UserRole_n25(this._uploadFile, this._downloadFile, result);
+            return from_candid_UserRole_n36(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getCrawlQueue(): Promise<Array<[bigint, bigint]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCrawlQueue();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCrawlQueue();
+            return result;
+        }
+    }
+    async getDiscoverFeed(arg0: string | null): Promise<DiscoverFeed> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getDiscoverFeed(to_candid_opt_n38(this._uploadFile, this._downloadFile, arg0));
+                return from_candid_DiscoverFeed_n39(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getDiscoverFeed(to_candid_opt_n38(this._uploadFile, this._downloadFile, arg0));
+            return from_candid_DiscoverFeed_n39(this._uploadFile, this._downloadFile, result);
         }
     }
     async getFlaggedDomains(): Promise<Array<BlacklistEntry>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getFlaggedDomains();
-                return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n30(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getFlaggedDomains();
-            return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n30(this._uploadFile, this._downloadFile, result);
         }
     }
     async getMyAdvertiserProfile(arg0: string): Promise<AdvertiserProfile | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyAdvertiserProfile(arg0);
-                return from_candid_opt_n27(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n41(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyAdvertiserProfile(arg0);
-            return from_candid_opt_n27(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n41(this._uploadFile, this._downloadFile, result);
         }
     }
     async getMyCampaigns(arg0: string): Promise<Array<Campaign>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyCampaigns(arg0);
-                return from_candid_vec_n16(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyCampaigns(arg0);
-            return from_candid_vec_n16(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n28(this._uploadFile, this._downloadFile, result);
         }
     }
     async getMyWebsites(): Promise<Array<Website>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyWebsites();
-                return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyWebsites();
-            return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getMyWebsitesByEmail(arg0: string): Promise<Array<Website>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMyWebsitesByEmail(arg0);
+                return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMyWebsitesByEmail(arg0);
+            return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getPagesForWebsite(arg0: bigint): Promise<Array<Page>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getPagesForWebsite(arg0);
+                return from_candid_vec_n42(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getPagesForWebsite(arg0);
+            return from_candid_vec_n42(this._uploadFile, this._downloadFile, result);
         }
     }
     async getPendingWebsites(): Promise<Array<Website>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getPendingWebsites();
-                return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getPendingWebsites();
-            return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
         }
     }
     async getSecurityLogs(): Promise<Array<SecurityLog>> {
@@ -631,18 +880,74 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getTransactions(arg0: string): Promise<Array<Transaction>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getTransactions(arg0);
+                return from_candid_vec_n47(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getTransactions(arg0);
+            return from_candid_vec_n47(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getUserClickHistory(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserClickHistory(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserClickHistory(arg0);
+            return result;
+        }
+    }
+    async getUserInterests(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserInterests(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserInterests(arg0);
+            return result;
+        }
+    }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getUserProfile(arg0);
-                return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n35(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getUserProfile(arg0);
-            return from_candid_opt_n24(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n35(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getUserSearchHistory(arg0: string): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserSearchHistory(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserSearchHistory(arg0);
+            return result;
         }
     }
     async getVerificationToken(arg0: bigint): Promise<string> {
@@ -657,6 +962,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getVerificationToken(arg0);
             return result;
+        }
+    }
+    async getWallet(arg0: string): Promise<AdvertiserWallet | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getWallet(arg0);
+                return from_candid_opt_n54(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getWallet(arg0);
+            return from_candid_opt_n54(this._uploadFile, this._downloadFile, result);
         }
     }
     async importSeedData(arg0: Array<SeedEntry>): Promise<bigint> {
@@ -701,18 +1020,88 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async recordAdClick(arg0: bigint, arg1: string): Promise<Result> {
+    async rankAds(arg0: string): Promise<Array<AdMatchResult>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.rankAds(arg0);
+                return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.rankAds(arg0);
+            return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async recalculateAllSpamScores(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recalculateAllSpamScores();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recalculateAllSpamScores();
+            return result;
+        }
+    }
+    async recalculateSpamScore(arg0: bigint): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recalculateSpamScore(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recalculateSpamScore(arg0);
+            return result;
+        }
+    }
+    async reclaimDomain(arg0: bigint, arg1: string): Promise<Website> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.reclaimDomain(arg0, arg1);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.reclaimDomain(arg0, arg1);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async recordAdClick(arg0: bigint, arg1: string): Promise<Result_1> {
         if (this.processError) {
             try {
                 const result = await this.actor.recordAdClick(arg0, arg1);
-                return from_candid_Result_n28(this._uploadFile, this._downloadFile, result);
+                return from_candid_Result_1_n62(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.recordAdClick(arg0, arg1);
-            return from_candid_Result_n28(this._uploadFile, this._downloadFile, result);
+            return from_candid_Result_1_n62(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async recordAdClickV2(arg0: bigint, arg1: string): Promise<Result_1> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordAdClickV2(arg0, arg1);
+                return from_candid_Result_1_n62(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordAdClickV2(arg0, arg1);
+            return from_candid_Result_1_n62(this._uploadFile, this._downloadFile, result);
         }
     }
     async recordAdImpression(arg0: bigint): Promise<void> {
@@ -729,6 +1118,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async recordAdImpressionV2(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordAdImpressionV2(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordAdImpressionV2(arg0);
+            return result;
+        }
+    }
     async recordClick(arg0: string): Promise<void> {
         if (this.processError) {
             try {
@@ -740,6 +1143,62 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.recordClick(arg0);
+            return result;
+        }
+    }
+    async recordImpression(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordImpression(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordImpression(arg0);
+            return result;
+        }
+    }
+    async recordUserClick(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordUserClick(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordUserClick(arg0, arg1);
+            return result;
+        }
+    }
+    async recordUserSearch(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordUserSearch(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordUserSearch(arg0, arg1);
+            return result;
+        }
+    }
+    async refreshUserInterests(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.refreshUserInterests(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.refreshUserInterests(arg0);
             return result;
         }
     }
@@ -761,14 +1220,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.rejectWebsite(arg0);
-                return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.rejectWebsite(arg0);
-            return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async removeFromBlacklist(arg0: string): Promise<void> {
@@ -783,6 +1242,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.removeFromBlacklist(arg0);
             return result;
+        }
+    }
+    async requestIndexing(arg0: bigint, arg1: string): Promise<Website> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.requestIndexing(arg0, arg1);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.requestIndexing(arg0, arg1);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async resumeCampaign(arg0: bigint): Promise<void> {
@@ -802,14 +1275,42 @@ export class Backend implements backendInterface {
     async reviewFlaggedDomain(arg0: string, arg1: Variant_remove_approve_block): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.reviewFlaggedDomain(arg0, to_candid_variant_n30(this._uploadFile, this._downloadFile, arg1));
+                const result = await this.actor.reviewFlaggedDomain(arg0, to_candid_variant_n64(this._uploadFile, this._downloadFile, arg1));
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.reviewFlaggedDomain(arg0, to_candid_variant_n30(this._uploadFile, this._downloadFile, arg1));
+            const result = await this.actor.reviewFlaggedDomain(arg0, to_candid_variant_n64(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async runCrawler(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.runCrawler();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.runCrawler();
+            return result;
+        }
+    }
+    async runOwnershipCleanup(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.runOwnershipCleanup();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.runOwnershipCleanup();
             return result;
         }
     }
@@ -827,18 +1328,32 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async searchWebsites(arg0: string, arg1: [string] | []): Promise<Array<Website>> {
+    async searchWebsites(arg0: string, arg1: string | null): Promise<Array<Website>> {
         if (this.processError) {
             try {
-                const result = await this.actor.searchWebsites(arg0, arg1);
-                return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+                const result = await this.actor.searchWebsites(arg0, to_candid_opt_n38(this._uploadFile, this._downloadFile, arg1));
+                return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.searchWebsites(arg0, arg1);
-            return from_candid_vec_n17(this._uploadFile, this._downloadFile, result);
+            const result = await this.actor.searchWebsites(arg0, to_candid_opt_n38(this._uploadFile, this._downloadFile, arg1));
+            return from_candid_vec_n29(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async setAdminBoost(arg0: bigint, arg1: bigint): Promise<Website> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setAdminBoost(arg0, arg1);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setAdminBoost(arg0, arg1);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async setAdsEnabled(arg0: boolean): Promise<void> {
@@ -855,18 +1370,18 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async submitWebsite(arg0: string, arg1: string, arg2: string, arg3: Array<string>): Promise<Website> {
+    async submitWebsite(arg0: string, arg1: string, arg2: string, arg3: string, arg4: Array<string>): Promise<Website> {
         if (this.processError) {
             try {
-                const result = await this.actor.submitWebsite(arg0, arg1, arg2, arg3);
-                return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+                const result = await this.actor.submitWebsite(arg0, arg1, arg2, arg3, arg4);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.submitWebsite(arg0, arg1, arg2, arg3);
-            return from_candid_Website_n1(this._uploadFile, this._downloadFile, result);
+            const result = await this.actor.submitWebsite(arg0, arg1, arg2, arg3, arg4);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async transform(arg0: TransformationInput): Promise<TransformationOutput> {
@@ -887,14 +1402,56 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.updateCampaign(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-                return from_candid_Campaign_n8(this._uploadFile, this._downloadFile, result);
+                return from_candid_Campaign_n18(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.updateCampaign(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-            return from_candid_Campaign_n8(this._uploadFile, this._downloadFile, result);
+            return from_candid_Campaign_n18(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async updateLastCrawledAt(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateLastCrawledAt(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateLastCrawledAt(arg0);
+            return result;
+        }
+    }
+    async updatePageStatus(arg0: bigint, arg1: PageStatus): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updatePageStatus(arg0, to_candid_PageStatus_n65(this._uploadFile, this._downloadFile, arg1));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updatePageStatus(arg0, to_candid_PageStatus_n65(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async updateSitemap(arg0: bigint, arg1: string): Promise<Website> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateSitemap(arg0, arg1);
+                return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateSitemap(arg0, arg1);
+            return from_candid_Website_n3(this._uploadFile, this._downloadFile, result);
         }
     }
     async verifyDomain(arg0: bigint): Promise<boolean> {
@@ -911,279 +1468,112 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async recordUserSearch(arg0: string, arg1: string): Promise<void> {
+    async verifyRazorpayPayment(arg0: string, arg1: string, arg2: string, arg3: string, arg4: bigint): Promise<Result> {
         if (this.processError) {
             try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).recordUserSearch(arg0, arg1);
-                return result;
+                const result = await this.actor.verifyRazorpayPayment(arg0, arg1, arg2, arg3, arg4);
+                return from_candid_Result_n1(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).recordUserSearch(arg0, arg1);
-            return result;
-        }
-    }
-    async recordUserClick(arg0: string, arg1: string): Promise<void> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).recordUserClick(arg0, arg1);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).recordUserClick(arg0, arg1);
-            return result;
-        }
-    }
-    async getUserSearchHistory(arg0: string): Promise<Array<string>> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).getUserSearchHistory(arg0);
-                return result as string[];
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).getUserSearchHistory(arg0);
-            return result as string[];
-        }
-    }
-    async getUserClickHistory(arg0: string): Promise<Array<string>> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).getUserClickHistory(arg0);
-                return result as string[];
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).getUserClickHistory(arg0);
-            return result as string[];
-        }
-    }
-    async refreshUserInterests(arg0: string): Promise<void> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).refreshUserInterests(arg0);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).refreshUserInterests(arg0);
-            return result;
-        }
-    }
-    async getUserInterests(arg0: string): Promise<Array<string>> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).getUserInterests(arg0);
-                return result as string[];
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).getUserInterests(arg0);
-            return result as string[];
-        }
-    }
-    async recalculateSpamScore(arg0: bigint): Promise<bigint> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).recalculateSpamScore(arg0);
-                return result as bigint;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).recalculateSpamScore(arg0);
-            return result as bigint;
-        }
-    }
-    async recalculateAllSpamScores(): Promise<bigint> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).recalculateAllSpamScores();
-                return result as bigint;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).recalculateAllSpamScores();
-            return result as bigint;
-        }
-    }
-    async getDiscoverFeed(arg0: [string] | []): Promise<import("./backend.d").DiscoverFeed> {
-        if (this.processError) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await (this.actor as any).getDiscoverFeed(arg0);
-                const raw = result as { trending: Array<any>; recentlyIndexed: Array<any>; popularDomains: Array<any>; recommendedForYou: Array<any> };
-                return {
-                    trending: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.trending),
-                    recentlyIndexed: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recentlyIndexed),
-                    popularDomains: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.popularDomains),
-                    recommendedForYou: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recommendedForYou),
-                };
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.actor as any).getDiscoverFeed(arg0);
-            const raw = result as { trending: Array<any>; recentlyIndexed: Array<any>; popularDomains: Array<any>; recommendedForYou: Array<any> };
-            return {
-                trending: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.trending),
-                recentlyIndexed: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recentlyIndexed),
-                popularDomains: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.popularDomains),
-                recommendedForYou: from_candid_vec_n17(this._uploadFile, this._downloadFile, raw.recommendedForYou),
-            };
+            const result = await this.actor.verifyRazorpayPayment(arg0, arg1, arg2, arg3, arg4);
+            return from_candid_Result_n1(this._uploadFile, this._downloadFile, result);
         }
     }
 }
-function from_candid_AdvertiserProfile_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AdvertiserProfile): AdvertiserProfile {
-    return from_candid_record_n14(_uploadFile, _downloadFile, value);
+function from_candid_AdMatchResult_n56(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AdMatchResult): AdMatchResult {
+    return from_candid_record_n57(_uploadFile, _downloadFile, value);
 }
-function from_candid_AdvertiserStatus_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AdvertiserStatus): AdvertiserStatus {
-    return from_candid_variant_n4(_uploadFile, _downloadFile, value);
+function from_candid_Ad_n58(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Ad): Ad {
+    return from_candid_record_n59(_uploadFile, _downloadFile, value);
 }
-function from_candid_BlacklistEntry_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BlacklistEntry): BlacklistEntry {
-    return from_candid_record_n20(_uploadFile, _downloadFile, value);
+function from_candid_AdvertiserProfile_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AdvertiserProfile): AdvertiserProfile {
+    return from_candid_record_n26(_uploadFile, _downloadFile, value);
 }
-function from_candid_BlacklistStatus_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BlacklistStatus): BlacklistStatus {
-    return from_candid_variant_n22(_uploadFile, _downloadFile, value);
+function from_candid_AdvertiserStatus_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AdvertiserStatus): AdvertiserStatus {
+    return from_candid_variant_n6(_uploadFile, _downloadFile, value);
 }
-function from_candid_CampaignStatus_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _CampaignStatus): CampaignStatus {
-    return from_candid_variant_n11(_uploadFile, _downloadFile, value);
+function from_candid_BlacklistEntry_n31(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BlacklistEntry): BlacklistEntry {
+    return from_candid_record_n32(_uploadFile, _downloadFile, value);
 }
-function from_candid_Campaign_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Campaign): Campaign {
-    return from_candid_record_n9(_uploadFile, _downloadFile, value);
+function from_candid_BlacklistStatus_n33(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BlacklistStatus): BlacklistStatus {
+    return from_candid_variant_n34(_uploadFile, _downloadFile, value);
 }
-function from_candid_Result_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Result): Result {
-    return from_candid_variant_n29(_uploadFile, _downloadFile, value);
+function from_candid_CampaignStatus_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _CampaignStatus): CampaignStatus {
+    return from_candid_variant_n21(_uploadFile, _downloadFile, value);
 }
-function from_candid_UserRole_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
-    return from_candid_variant_n26(_uploadFile, _downloadFile, value);
+function from_candid_Campaign_n18(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Campaign): Campaign {
+    return from_candid_record_n19(_uploadFile, _downloadFile, value);
 }
-function from_candid_WebsiteStatus_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _WebsiteStatus): WebsiteStatus {
-    return from_candid_variant_n4(_uploadFile, _downloadFile, value);
+function from_candid_DiscoverFeed_n39(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _DiscoverFeed): DiscoverFeed {
+    return from_candid_record_n40(_uploadFile, _downloadFile, value);
 }
-function from_candid_Website_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Website): Website {
-    return from_candid_record_n2(_uploadFile, _downloadFile, value);
+function from_candid_IndexStatus_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _IndexStatus): IndexStatus {
+    return from_candid_variant_n8(_uploadFile, _downloadFile, value);
 }
-function from_candid_opt_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
+function from_candid_MatchType_n60(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _MatchType): MatchType {
+    return from_candid_variant_n61(_uploadFile, _downloadFile, value);
+}
+function from_candid_OwnershipStatus_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _OwnershipStatus): OwnershipStatus {
+    return from_candid_variant_n12(_uploadFile, _downloadFile, value);
+}
+function from_candid_PageStatus_n45(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PageStatus): PageStatus {
+    return from_candid_variant_n46(_uploadFile, _downloadFile, value);
+}
+function from_candid_Page_n43(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Page): Page {
+    return from_candid_record_n44(_uploadFile, _downloadFile, value);
+}
+function from_candid_Result_1_n62(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Result_1): Result_1 {
+    return from_candid_variant_n63(_uploadFile, _downloadFile, value);
+}
+function from_candid_Result_2_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Result_2): Result_2 {
+    return from_candid_variant_n23(_uploadFile, _downloadFile, value);
+}
+function from_candid_Result_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Result): Result {
+    return from_candid_variant_n2(_uploadFile, _downloadFile, value);
+}
+function from_candid_TransactionReason_n52(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionReason): TransactionReason {
+    return from_candid_variant_n53(_uploadFile, _downloadFile, value);
+}
+function from_candid_TransactionType_n50(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionType): TransactionType {
+    return from_candid_variant_n51(_uploadFile, _downloadFile, value);
+}
+function from_candid_Transaction_n48(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Transaction): Transaction {
+    return from_candid_record_n49(_uploadFile, _downloadFile, value);
+}
+function from_candid_UserRole_n36(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
+    return from_candid_variant_n37(_uploadFile, _downloadFile, value);
+}
+function from_candid_VerificationStatus_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _VerificationStatus): VerificationStatus {
+    return from_candid_variant_n14(_uploadFile, _downloadFile, value);
+}
+function from_candid_WebsiteStatus_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _WebsiteStatus): WebsiteStatus {
+    return from_candid_variant_n6(_uploadFile, _downloadFile, value);
+}
+function from_candid_Website_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Website): Website {
+    return from_candid_record_n4(_uploadFile, _downloadFile, value);
+}
+function from_candid_opt_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [bigint]): bigint | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
+function from_candid_opt_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_AdvertiserProfile]): AdvertiserProfile | null {
-    return value.length === 0 ? null : from_candid_AdvertiserProfile_n13(_uploadFile, _downloadFile, value[0]);
-}
-function from_candid_opt_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [bigint]): bigint | null {
+function from_candid_opt_n35(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    status: _AdvertiserStatus;
-    appliedAt: bigint;
-    balance: bigint;
-    reviewedAt: [] | [bigint];
-    email: string;
-}): {
-    status: AdvertiserStatus;
-    appliedAt: bigint;
-    balance: bigint;
-    reviewedAt?: bigint;
-    email: string;
-} {
-    return {
-        status: from_candid_AdvertiserStatus_n15(_uploadFile, _downloadFile, value.status),
-        appliedAt: value.appliedAt,
-        balance: value.balance,
-        reviewedAt: record_opt_to_undefined(from_candid_opt_n5(_uploadFile, _downloadFile, value.reviewedAt)),
-        email: value.email
-    };
+function from_candid_opt_n41(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_AdvertiserProfile]): AdvertiserProfile | null {
+    return value.length === 0 ? null : from_candid_AdvertiserProfile_n25(_uploadFile, _downloadFile, value[0]);
 }
-function from_candid_record_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: any): Website {
-    return {
-        id: value.id,
-        url: value.url,
-        status: from_candid_WebsiteStatus_n3(_uploadFile, _downloadFile, value.status),
-        title: value.title,
-        ownerId: value.ownerId ?? "",
-        ownerPrincipal: value.ownerPrincipal?.[0] ?? undefined,
-        approvedAt: value.approvedAt?.length > 0 ? value.approvedAt[0] : undefined,
-        verificationToken: value.verificationToken ?? "",
-        submittedAt: value.submittedAt,
-        description: value.description,
-        isSeed: value.isSeed,
-        keywords: value.keywords ?? [],
-        isVerified: value.isVerified,
-        indexStatus: value.indexStatus?.[0] ? Object.keys(value.indexStatus[0])[0] : undefined,
-        sitemapUrl: value.sitemapUrl?.[0] ?? undefined,
-        lastCheckedAt: value.lastCheckedAt?.[0] ?? undefined,
-        lastCrawledAt: value.lastCrawledAt?.[0] ?? undefined,
-        ownershipStatus: value.ownershipStatus ? Object.keys(value.ownershipStatus)[0] : "active",
-        verificationStatus: value.verificationStatus ? Object.keys(value.verificationStatus)[0] : "pending",
-        lastVerifiedAt: value.lastVerifiedAt?.[0] ?? undefined,
-        verificationExpiryAt: value.verificationExpiryAt?.[0] ?? undefined,
-        ownerHistory: value.ownerHistory ?? [],
-        adminBoost: value.adminBoost ?? BigInt(0),
-        clicks: value.clicks ?? BigInt(0),
-        impressions: value.impressions ?? BigInt(0),
-        spamScore: value.spamScore ?? BigInt(0),
-        seoScore: value.seoScore ?? BigInt(0),
-    };
+function from_candid_opt_n54(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_AdvertiserWallet]): AdvertiserWallet | null {
+    return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    status: _BlacklistStatus;
-    domain: string;
-    reviewedBy: [] | [string];
-    addedAt: bigint;
-    reason: string;
-}): {
-    status: BlacklistStatus;
-    domain: string;
-    reviewedBy?: string;
-    addedAt: bigint;
-    reason: string;
-} {
-    return {
-        status: from_candid_BlacklistStatus_n21(_uploadFile, _downloadFile, value.status),
-        domain: value.domain,
-        reviewedBy: record_opt_to_undefined(from_candid_opt_n23(_uploadFile, _downloadFile, value.reviewedBy)),
-        addedAt: value.addedAt,
-        reason: value.reason
-    };
+function from_candid_opt_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [Principal]): Principal | null {
+    return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: bigint;
     status: _CampaignStatus;
     clicks: bigint;
@@ -1214,7 +1604,7 @@ function from_candid_record_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint
 } {
     return {
         id: value.id,
-        status: from_candid_CampaignStatus_n10(_uploadFile, _downloadFile, value.status),
+        status: from_candid_CampaignStatus_n20(_uploadFile, _downloadFile, value.status),
         clicks: value.clicks,
         name: value.name,
         createdAt: value.createdAt,
@@ -1228,7 +1618,290 @@ function from_candid_record_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint
         budget: value.budget
     };
 }
-function from_candid_variant_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    status: _AdvertiserStatus;
+    appliedAt: bigint;
+    balance: bigint;
+    reviewedAt: [] | [bigint];
+    email: string;
+}): {
+    status: AdvertiserStatus;
+    appliedAt: bigint;
+    balance: bigint;
+    reviewedAt?: bigint;
+    email: string;
+} {
+    return {
+        status: from_candid_AdvertiserStatus_n27(_uploadFile, _downloadFile, value.status),
+        appliedAt: value.appliedAt,
+        balance: value.balance,
+        reviewedAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.reviewedAt)),
+        email: value.email
+    };
+}
+function from_candid_record_n32(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    status: _BlacklistStatus;
+    domain: string;
+    reviewedBy: [] | [string];
+    addedAt: bigint;
+    reason: string;
+}): {
+    status: BlacklistStatus;
+    domain: string;
+    reviewedBy?: string;
+    addedAt: bigint;
+    reason: string;
+} {
+    return {
+        status: from_candid_BlacklistStatus_n33(_uploadFile, _downloadFile, value.status),
+        domain: value.domain,
+        reviewedBy: record_opt_to_undefined(from_candid_opt_n15(_uploadFile, _downloadFile, value.reviewedBy)),
+        addedAt: value.addedAt,
+        reason: value.reason
+    };
+}
+function from_candid_record_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    url: string;
+    status: _WebsiteStatus;
+    clicks: bigint;
+    title: string;
+    indexStatus: _IndexStatus;
+    spamScore: bigint;
+    ownerId: string;
+    ownerPrincipal: [] | [Principal];
+    approvedAt: [] | [bigint];
+    verificationToken: string;
+    lastVerifiedAt: [] | [bigint];
+    ownershipStatus: _OwnershipStatus;
+    impressions: bigint;
+    submittedAt: bigint;
+    description: string;
+    verificationExpiryAt: [] | [bigint];
+    isSeed: boolean;
+    keywords: Array<string>;
+    seoScore: bigint;
+    isVerified: boolean;
+    lastCheckedAt: [] | [bigint];
+    lastCrawledAt: [] | [bigint];
+    ownerHistory: Array<string>;
+    verificationStatus: _VerificationStatus;
+    adminBoost: bigint;
+    sitemapUrl: [] | [string];
+}): {
+    id: bigint;
+    url: string;
+    status: WebsiteStatus;
+    clicks: bigint;
+    title: string;
+    indexStatus: IndexStatus;
+    spamScore: bigint;
+    ownerId: string;
+    ownerPrincipal?: Principal;
+    approvedAt?: bigint;
+    verificationToken: string;
+    lastVerifiedAt?: bigint;
+    ownershipStatus: OwnershipStatus;
+    impressions: bigint;
+    submittedAt: bigint;
+    description: string;
+    verificationExpiryAt?: bigint;
+    isSeed: boolean;
+    keywords: Array<string>;
+    seoScore: bigint;
+    isVerified: boolean;
+    lastCheckedAt?: bigint;
+    lastCrawledAt?: bigint;
+    ownerHistory: Array<string>;
+    verificationStatus: VerificationStatus;
+    adminBoost: bigint;
+    sitemapUrl?: string;
+} {
+    return {
+        id: value.id,
+        url: value.url,
+        status: from_candid_WebsiteStatus_n5(_uploadFile, _downloadFile, value.status),
+        clicks: value.clicks,
+        title: value.title,
+        indexStatus: from_candid_IndexStatus_n7(_uploadFile, _downloadFile, value.indexStatus),
+        spamScore: value.spamScore,
+        ownerId: value.ownerId,
+        ownerPrincipal: record_opt_to_undefined(from_candid_opt_n9(_uploadFile, _downloadFile, value.ownerPrincipal)),
+        approvedAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.approvedAt)),
+        verificationToken: value.verificationToken,
+        lastVerifiedAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.lastVerifiedAt)),
+        ownershipStatus: from_candid_OwnershipStatus_n11(_uploadFile, _downloadFile, value.ownershipStatus),
+        impressions: value.impressions,
+        submittedAt: value.submittedAt,
+        description: value.description,
+        verificationExpiryAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.verificationExpiryAt)),
+        isSeed: value.isSeed,
+        keywords: value.keywords,
+        seoScore: value.seoScore,
+        isVerified: value.isVerified,
+        lastCheckedAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.lastCheckedAt)),
+        lastCrawledAt: record_opt_to_undefined(from_candid_opt_n10(_uploadFile, _downloadFile, value.lastCrawledAt)),
+        ownerHistory: value.ownerHistory,
+        verificationStatus: from_candid_VerificationStatus_n13(_uploadFile, _downloadFile, value.verificationStatus),
+        adminBoost: value.adminBoost,
+        sitemapUrl: record_opt_to_undefined(from_candid_opt_n15(_uploadFile, _downloadFile, value.sitemapUrl))
+    };
+}
+function from_candid_record_n40(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    popularDomains: Array<_Website>;
+    recentlyIndexed: Array<_Website>;
+    trending: Array<_Website>;
+    recommendedForYou: Array<_Website>;
+}): {
+    popularDomains: Array<Website>;
+    recentlyIndexed: Array<Website>;
+    trending: Array<Website>;
+    recommendedForYou: Array<Website>;
+} {
+    return {
+        popularDomains: from_candid_vec_n29(_uploadFile, _downloadFile, value.popularDomains),
+        recentlyIndexed: from_candid_vec_n29(_uploadFile, _downloadFile, value.recentlyIndexed),
+        trending: from_candid_vec_n29(_uploadFile, _downloadFile, value.trending),
+        recommendedForYou: from_candid_vec_n29(_uploadFile, _downloadFile, value.recommendedForYou)
+    };
+}
+function from_candid_record_n44(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    url: string;
+    status: _PageStatus;
+    websiteId: bigint;
+    addedAt: bigint;
+}): {
+    id: bigint;
+    url: string;
+    status: PageStatus;
+    websiteId: bigint;
+    addedAt: bigint;
+} {
+    return {
+        id: value.id,
+        url: value.url,
+        status: from_candid_PageStatus_n45(_uploadFile, _downloadFile, value.status),
+        websiteId: value.websiteId,
+        addedAt: value.addedAt
+    };
+}
+function from_candid_record_n49(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    createdAt: bigint;
+    type: _TransactionType;
+    email: string;
+    amount: bigint;
+    reason: _TransactionReason;
+}): {
+    id: bigint;
+    createdAt: bigint;
+    type: TransactionType;
+    email: string;
+    amount: bigint;
+    reason: TransactionReason;
+} {
+    return {
+        id: value.id,
+        createdAt: value.createdAt,
+        type: from_candid_TransactionType_n50(_uploadFile, _downloadFile, value.type),
+        email: value.email,
+        amount: value.amount,
+        reason: from_candid_TransactionReason_n52(_uploadFile, _downloadFile, value.reason)
+    };
+}
+function from_candid_record_n57(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ad: _Ad;
+    keywordScore: bigint;
+}): {
+    ad: Ad;
+    keywordScore: bigint;
+} {
+    return {
+        ad: from_candid_Ad_n58(_uploadFile, _downloadFile, value.ad),
+        keywordScore: value.keywordScore
+    };
+}
+function from_candid_record_n59(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    matchType: _MatchType;
+    clicks: bigint;
+    title: string;
+    createdAt: bigint;
+    impressions: bigint;
+    description: string;
+    bidAmount: bigint;
+    keywords: Array<string>;
+    adGroupId: bigint;
+    destinationUrl: string;
+    negativeKeywords: Array<string>;
+}): {
+    id: bigint;
+    matchType: MatchType;
+    clicks: bigint;
+    title: string;
+    createdAt: bigint;
+    impressions: bigint;
+    description: string;
+    bidAmount: bigint;
+    keywords: Array<string>;
+    adGroupId: bigint;
+    destinationUrl: string;
+    negativeKeywords: Array<string>;
+} {
+    return {
+        id: value.id,
+        matchType: from_candid_MatchType_n60(_uploadFile, _downloadFile, value.matchType),
+        clicks: value.clicks,
+        title: value.title,
+        createdAt: value.createdAt,
+        impressions: value.impressions,
+        description: value.description,
+        bidAmount: value.bidAmount,
+        keywords: value.keywords,
+        adGroupId: value.adGroupId,
+        destinationUrl: value.destinationUrl,
+        negativeKeywords: value.negativeKeywords
+    };
+}
+function from_candid_variant_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    active: null;
+} | {
+    expired: null;
+} | {
+    reclaimed: null;
+}): OwnershipStatus {
+    return "active" in value ? OwnershipStatus.active : "expired" in value ? OwnershipStatus.expired : "reclaimed" in value ? OwnershipStatus.reclaimed : value;
+}
+function from_candid_variant_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    verified: null;
+} | {
+    expired: null;
+} | {
+    pending: null;
+}): VerificationStatus {
+    return "verified" in value ? VerificationStatus.verified : "expired" in value ? VerificationStatus.expired : "pending" in value ? VerificationStatus.pending : value;
+}
+function from_candid_variant_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: _AdvertiserWallet;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: AdvertiserWallet;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     active: null;
 } | {
     ended: null;
@@ -1237,14 +1910,41 @@ function from_candid_variant_n11(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): CampaignStatus {
     return "active" in value ? CampaignStatus.active : "ended" in value ? CampaignStatus.ended : "paused" in value ? CampaignStatus.paused : value;
 }
-function from_candid_variant_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: {
+        orderId: string;
+        amount: bigint;
+        keyId: string;
+    };
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: {
+        orderId: string;
+        amount: bigint;
+        keyId: string;
+    };
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n34(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     blocked: null;
 } | {
     flagged: null;
 }): BlacklistStatus {
     return "blocked" in value ? BlacklistStatus.blocked : "flagged" in value ? BlacklistStatus.flagged : value;
 }
-function from_candid_variant_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n37(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     admin: null;
 } | {
     user: null;
@@ -1253,7 +1953,50 @@ function from_candid_variant_n26(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): UserRole {
     return "admin" in value ? UserRole.admin : "user" in value ? UserRole.user : "guest" in value ? UserRole.guest : value;
 }
-function from_candid_variant_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n46(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    pending: null;
+} | {
+    error: null;
+} | {
+    indexed: null;
+}): PageStatus {
+    return "pending" in value ? PageStatus.pending : "error" in value ? PageStatus.error : "indexed" in value ? PageStatus.indexed : value;
+}
+function from_candid_variant_n51(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    credit: null;
+} | {
+    debit: null;
+}): TransactionType {
+    return "credit" in value ? TransactionType.credit : "debit" in value ? TransactionType.debit : value;
+}
+function from_candid_variant_n53(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    topup: null;
+} | {
+    ad_click: null;
+} | {
+    refund: null;
+}): TransactionReason {
+    return "topup" in value ? TransactionReason.topup : "ad_click" in value ? TransactionReason.ad_click : "refund" in value ? TransactionReason.refund : value;
+}
+function from_candid_variant_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    pending: null;
+} | {
+    approved: null;
+} | {
+    rejected: null;
+}): WebsiteStatus {
+    return "pending" in value ? WebsiteStatus.pending : "approved" in value ? WebsiteStatus.approved : "rejected" in value ? WebsiteStatus.rejected : value;
+}
+function from_candid_variant_n61(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    exact: null;
+} | {
+    broad: null;
+} | {
+    phrase: null;
+}): MatchType {
+    return "exact" in value ? MatchType.exact : "broad" in value ? MatchType.broad : "phrase" in value ? MatchType.phrase : value;
+}
+function from_candid_variant_n63(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: null;
 } | {
     err: string;
@@ -1272,31 +2015,63 @@ function from_candid_variant_n29(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     pending: null;
 } | {
-    approved: null;
+    error: null;
 } | {
-    rejected: null;
-}): WebsiteStatus {
-    return "pending" in value ? WebsiteStatus.pending : "approved" in value ? WebsiteStatus.approved : "rejected" in value ? WebsiteStatus.rejected : value;
+    notIndexed: null;
+} | {
+    indexed: null;
+}): IndexStatus {
+    return "pending" in value ? IndexStatus.pending : "error" in value ? IndexStatus.error : "notIndexed" in value ? IndexStatus.notIndexed : "indexed" in value ? IndexStatus.indexed : value;
 }
-function from_candid_vec_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_AdvertiserProfile>): Array<AdvertiserProfile> {
-    return value.map((x)=>from_candid_AdvertiserProfile_n13(_uploadFile, _downloadFile, x));
+function from_candid_vec_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_AdvertiserProfile>): Array<AdvertiserProfile> {
+    return value.map((x)=>from_candid_AdvertiserProfile_n25(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Campaign>): Array<Campaign> {
-    return value.map((x)=>from_candid_Campaign_n8(_uploadFile, _downloadFile, x));
+function from_candid_vec_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Campaign>): Array<Campaign> {
+    return value.map((x)=>from_candid_Campaign_n18(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Website>): Array<Website> {
-    return value.map((x)=>from_candid_Website_n1(_uploadFile, _downloadFile, x));
+function from_candid_vec_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Website>): Array<Website> {
+    return value.map((x)=>from_candid_Website_n3(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n18(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_BlacklistEntry>): Array<BlacklistEntry> {
-    return value.map((x)=>from_candid_BlacklistEntry_n19(_uploadFile, _downloadFile, x));
+function from_candid_vec_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_BlacklistEntry>): Array<BlacklistEntry> {
+    return value.map((x)=>from_candid_BlacklistEntry_n31(_uploadFile, _downloadFile, x));
 }
-function to_candid_UserRole_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): _UserRole {
-    return to_candid_variant_n7(_uploadFile, _downloadFile, value);
+function from_candid_vec_n42(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Page>): Array<Page> {
+    return value.map((x)=>from_candid_Page_n43(_uploadFile, _downloadFile, x));
 }
-function to_candid_variant_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Variant_remove_approve_block): {
+function from_candid_vec_n47(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Transaction>): Array<Transaction> {
+    return value.map((x)=>from_candid_Transaction_n48(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n55(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_AdMatchResult>): Array<AdMatchResult> {
+    return value.map((x)=>from_candid_AdMatchResult_n56(_uploadFile, _downloadFile, x));
+}
+function to_candid_PageStatus_n65(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: PageStatus): _PageStatus {
+    return to_candid_variant_n66(_uploadFile, _downloadFile, value);
+}
+function to_candid_UserRole_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): _UserRole {
+    return to_candid_variant_n17(_uploadFile, _downloadFile, value);
+}
+function to_candid_opt_n38(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: string | null): [] | [string] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_variant_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): {
+    admin: null;
+} | {
+    user: null;
+} | {
+    guest: null;
+} {
+    return value == UserRole.admin ? {
+        admin: null
+    } : value == UserRole.user ? {
+        user: null
+    } : value == UserRole.guest ? {
+        guest: null
+    } : value;
+}
+function to_candid_variant_n64(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Variant_remove_approve_block): {
     remove: null;
 } | {
     approve: null;
@@ -1311,19 +2086,19 @@ function to_candid_variant_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint
         block: null
     } : value;
 }
-function to_candid_variant_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): {
-    admin: null;
+function to_candid_variant_n66(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: PageStatus): {
+    pending: null;
 } | {
-    user: null;
+    error: null;
 } | {
-    guest: null;
+    indexed: null;
 } {
-    return value == UserRole.admin ? {
-        admin: null
-    } : value == UserRole.user ? {
-        user: null
-    } : value == UserRole.guest ? {
-        guest: null
+    return value == PageStatus.pending ? {
+        pending: null
+    } : value == PageStatus.error ? {
+        error: null
+    } : value == PageStatus.indexed ? {
+        indexed: null
     } : value;
 }
 export interface CreateActorOptions {

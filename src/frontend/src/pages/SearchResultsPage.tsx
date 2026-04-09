@@ -11,10 +11,14 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { AdResult, Website } from "../backend.d";
 import { useAuth } from "../context/AuthContext";
 import {
+  type AdMatchResult,
   useGetAdsEnabled,
   useGetAdsForSearch,
+  useRankAds,
   useRecordAdClick,
+  useRecordAdClickV2,
   useRecordAdImpression,
+  useRecordAdImpressionV2,
   useRecordClick,
   useRecordImpression,
   useRecordUserClick,
@@ -228,6 +232,121 @@ function SponsoredSection({
   );
 }
 
+// ── Ranked Ads Section (V2 — algorithm-based ranking) ─────────────────────
+
+function RankedAdsSection({
+  query,
+  rankedAds,
+  adsEnabled,
+}: {
+  query: string;
+  rankedAds: AdMatchResult[];
+  adsEnabled: boolean;
+}) {
+  const { mutate: recordAdImpressionV2 } = useRecordAdImpressionV2();
+  const { mutate: recordAdClickV2 } = useRecordAdClickV2();
+
+  // Fire impressions once when ranked ads are displayed
+  useEffect(() => {
+    if (!adsEnabled || rankedAds.length === 0) return;
+    for (const result of rankedAds.slice(0, 2)) {
+      recordAdImpressionV2(result.ad.id);
+    }
+  }, [adsEnabled, rankedAds, recordAdImpressionV2]);
+
+  if (!adsEnabled || rankedAds.length === 0) return null;
+
+  const displayAds = rankedAds.slice(0, 2);
+
+  const handleAdClick = (result: AdMatchResult) => {
+    const sessionId =
+      sessionStorage.getItem("aflino_session") ||
+      Math.random().toString(36).substring(2);
+    recordAdClickV2({ adId: result.ad.id, userSession: sessionId });
+    window.open(result.ad.destinationUrl, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="mb-5" data-ocid="search.ranked_ads.section">
+      <div className="flex flex-col gap-2">
+        {displayAds.map((result, i) => {
+          const { ad } = result;
+          const displayUrl = ad.destinationUrl
+            .replace(/^https?:\/\//, "")
+            .replace(/\/+$/, "");
+          return (
+            <div
+              key={ad.id.toString()}
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #E5E7EB",
+                borderRadius: "8px",
+                padding: "12px 16px",
+              }}
+              data-ocid={`search.ranked_ads.item.${i + 1}`}
+            >
+              {/* Sponsored pill */}
+              <span
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "#EBF3FF",
+                  color: "#006AFF",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  borderRadius: "4px",
+                  padding: "2px 8px",
+                  marginBottom: "6px",
+                }}
+              >
+                Sponsored
+              </span>
+
+              {/* Title — clickable */}
+              <button
+                type="button"
+                onClick={() => handleAdClick(result)}
+                className="block w-full text-left hover:underline"
+                style={{
+                  fontWeight: 600,
+                  color: "#111827",
+                  fontSize: "15px",
+                  lineHeight: "1.4",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+                data-ocid={`search.ranked_ads.link.${i + 1}`}
+              >
+                <HighlightedText text={ad.title} query={query} />
+              </button>
+
+              {/* Destination URL */}
+              <p
+                className="truncate mt-0.5"
+                style={{ color: "#006AFF", fontSize: "13px" }}
+              >
+                {displayUrl}
+              </p>
+
+              {/* Description */}
+              <p
+                className="line-clamp-2 mt-1"
+                style={{ color: "#6B7280", fontSize: "13px" }}
+              >
+                {ad.description}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Divider between ranked ads and organic results */}
+      <div className="mt-4 mb-1 border-b border-[#F3F4F6]" />
+    </div>
+  );
+}
+
 // ── Single result item ─────────────────────────────────────────────────
 
 function ResultItem({
@@ -307,6 +426,7 @@ export default function SearchResultsPage() {
   const { data: results = [], isLoading } = useSearchWebsites(q, userEmail);
   const { data: ads = [] } = useGetAdsForSearch(q);
   const { data: adsEnabled = false } = useGetAdsEnabled();
+  const { data: rankedAds = [] } = useRankAds(q);
   const { mutate: recordClick } = useRecordClick();
   const { mutate: recordImpression } = useRecordImpression();
   const { mutate: recordUserSearch } = useRecordUserSearch();
@@ -626,8 +746,17 @@ export default function SearchResultsPage() {
           </div>
         )}
 
-        {/* Sponsored Section — shown when there are results */}
+        {/* Ranked Ads Section (V2) — shown ABOVE legacy sponsored, suppresses it when active */}
         {hasResults && q && (
+          <RankedAdsSection
+            query={q}
+            rankedAds={rankedAds}
+            adsEnabled={adsEnabled}
+          />
+        )}
+
+        {/* Sponsored Section (legacy) — hidden when RankedAdsSection is showing ads */}
+        {hasResults && q && !(adsEnabled && rankedAds.length > 0) && (
           <SponsoredSection query={q} adsEnabled={adsEnabled} ads={ads} />
         )}
 

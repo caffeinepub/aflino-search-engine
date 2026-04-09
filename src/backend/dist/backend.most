@@ -1,0 +1,349 @@
+// Version: 1.0.0
+type AdGroup__288247954 = {campaignId : Nat; id : Nat; name : Text};
+type Ad__904238058 =
+  {
+    adGroupId : Nat;
+    bidAmount : Nat;
+    clicks : Nat;
+    createdAt : Int;
+    description : Text;
+    destinationUrl : Text;
+    id : Nat;
+    impressions : Nat;
+    keywords : [Text];
+    matchType : MatchType__343173518;
+    negativeKeywords : [Text];
+    title : Text
+  };
+type AdvertiserProfile__388179887 =
+  {
+    appliedAt : Int;
+    balance : Nat;
+    email : Text;
+    reviewedAt : ?Int;
+    status : AdvertiserStatus__381366177
+  };
+type AdvertiserStatus__381366177 = {#approved; #pending; #rejected};
+type AdvertiserWallet__583138673 =
+  {balance : Nat; createdAt : Int; email : Text; totalSpent : Nat};
+type BlacklistEntry__911010834 =
+  {
+    addedAt : Int;
+    domain : Text;
+    reason : Text;
+    reviewedBy : ?Text;
+    status : BlacklistStatus__322474478
+  };
+type BlacklistStatus__322474478 = {#blocked; #flagged};
+type CampaignStatusV2__299929672 = {#active; #paused};
+type CampaignStatus__144160907 = {#active; #ended; #paused};
+type CampaignV2__265684970 =
+  {
+    advertiserEmail : Text;
+    createdAt : Int;
+    dailyBudget : Nat;
+    id : Nat;
+    name : Text;
+    spent : Nat;
+    status : CampaignStatusV2__299929672;
+    totalBudget : Nat
+  };
+type Campaign__370329394 =
+  {
+    advertiserEmail : Text;
+    bidAmount : Nat;
+    budget : Nat;
+    clicks : Nat;
+    createdAt : Int;
+    dailyBudget : Nat;
+    destinationUrl : Text;
+    id : Nat;
+    impressions : Nat;
+    keywords : [Text];
+    name : Text;
+    spend : Nat;
+    status : CampaignStatus__144160907
+  };
+type Data__791452850<K, V> =
+  {var count : Nat__490723111; kvs : [var ?(K, V)]};
+type IndexStatus__914986967 = {#error; #indexed; #notIndexed; #pending};
+type Internal__8484328<K, V> =
+  {children : [var ?Node__46230540<K, V>]; data : Data__791452850<K, V>};
+type Leaf__809889148<K, V> = {data : Data__791452850<K, V>};
+type Map__158565046<K, V> = Map__297112838<K, V>;
+type Map__297112838<K, V> =
+  {var root : Node__46230540<K, V>; var size : Nat__490723111};
+type Map__605269027<K, V> = Map__158565046<K, V>;
+type MatchType__343173518 = {#broad; #exact; #phrase};
+type Nat__490723111 = Nat__920180692;
+type Nat__920180692 = Nat;
+type Node__46230540<K, V> =
+  {#internal : Internal__8484328<K, V>; #leaf : Leaf__809889148<K, V>};
+type OwnershipStatus__630756519 = {#active; #expired; #reclaimed};
+type PageStatus__290198926 = {#error; #indexed; #pending};
+type Page__810863137 =
+  {
+    addedAt : Int;
+    id : Nat;
+    status : PageStatus__290198926;
+    url : Text;
+    websiteId : Nat
+  };
+type SecurityLog__501685180 =
+  {
+    details : Text;
+    id : Nat;
+    logType : Text;
+    principalText : Text;
+    timestamp : Int
+  };
+type TransactionReason__276578331 = {#ad_click; #refund; #topup};
+type TransactionType__767491300 = {#credit; #debit};
+type Transaction__865268250 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    email : Text;
+    id : Nat;
+    reason : TransactionReason__276578331;
+    type_ : TransactionType__767491300
+  };
+type UserProfile__491224006 = {email : Text};
+type UserRole__1054455867 = {#admin; #guest; #user};
+type VerificationStatus__397273111 = {#expired; #pending; #verified};
+type WebsiteStatus__821076965 = {#approved; #pending; #rejected};
+type WebsiteV1__1011930380 =
+  {
+    approvedAt : ?Int;
+    description : Text;
+    id : Nat;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    ownerPrincipal : Principal;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationToken : Text
+  };
+type WebsiteV2__1052856491 =
+  {
+    approvedAt : ?Int;
+    description : Text;
+    id : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    ownerPrincipal : Principal;
+    sitemapUrl : ?Text;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationToken : Text
+  };
+type WebsiteV3Legacy__1037611465 =
+  {
+    approvedAt : ?Int;
+    description : Text;
+    id : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    lastVerifiedAt : ?Int;
+    ownerHistory : [Text];
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    ownershipStatus : OwnershipStatus__630756519;
+    sitemapUrl : ?Text;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationExpiryAt : ?Int;
+    verificationStatus : VerificationStatus__397273111;
+    verificationToken : Text
+  };
+type WebsiteV4Legacy__38260820 =
+  {
+    adminBoost : Nat;
+    approvedAt : ?Int;
+    description : Text;
+    id : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    lastVerifiedAt : ?Int;
+    ownerHistory : [Text];
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    ownershipStatus : OwnershipStatus__630756519;
+    sitemapUrl : ?Text;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationExpiryAt : ?Int;
+    verificationStatus : VerificationStatus__397273111;
+    verificationToken : Text
+  };
+type WebsiteV5Legacy__409893151 =
+  {
+    adminBoost : Nat;
+    approvedAt : ?Int;
+    clicks : Nat;
+    description : Text;
+    id : Nat;
+    impressions : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    lastVerifiedAt : ?Int;
+    ownerHistory : [Text];
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    ownershipStatus : OwnershipStatus__630756519;
+    sitemapUrl : ?Text;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationExpiryAt : ?Int;
+    verificationStatus : VerificationStatus__397273111;
+    verificationToken : Text
+  };
+type WebsiteV6Legacy__347295972 =
+  {
+    adminBoost : Nat;
+    approvedAt : ?Int;
+    clicks : Nat;
+    description : Text;
+    id : Nat;
+    impressions : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    lastVerifiedAt : ?Int;
+    ownerHistory : [Text];
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    ownershipStatus : OwnershipStatus__630756519;
+    sitemapUrl : ?Text;
+    spamScore : Nat;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationExpiryAt : ?Int;
+    verificationStatus : VerificationStatus__397273111;
+    verificationToken : Text
+  };
+type Website__826170718 =
+  {
+    adminBoost : Nat;
+    approvedAt : ?Int;
+    clicks : Nat;
+    description : Text;
+    id : Nat;
+    impressions : Nat;
+    indexStatus : IndexStatus__914986967;
+    isSeed : Bool;
+    isVerified : Bool;
+    keywords : [Text];
+    lastCheckedAt : ?Int;
+    lastCrawledAt : ?Int;
+    lastVerifiedAt : ?Int;
+    ownerHistory : [Text];
+    ownerId : Text;
+    ownerPrincipal : ?Principal;
+    ownershipStatus : OwnershipStatus__630756519;
+    seoScore : Nat;
+    sitemapUrl : ?Text;
+    spamScore : Nat;
+    status : WebsiteStatus__821076965;
+    submittedAt : Int;
+    title : Text;
+    url : Text;
+    verificationExpiryAt : ?Int;
+    verificationStatus : VerificationStatus__397273111;
+    verificationToken : Text
+  };
+actor {
+  stable BASE64_CHARS : [Char];
+  stable HEX_CHARS : [Char];
+  stable INJECTION_PATTERNS : [Text];
+  stable NINETY_DAYS_NS : Int;
+  stable ONE_DAY_NS : Int;
+  stable ONE_DAY_NS_INT : Int;
+  stable PRIORITY_ACTIVE : Nat;
+  stable PRIORITY_LOW_ACTIVITY : Nat;
+  stable PRIORITY_NEW : Nat;
+  stable RAZORPAY_KEY_ID : Text;
+  stable RAZORPAY_KEY_SECRET : Text;
+  stable RAZORPAY_ORDERS_URL : Text;
+  stable SEVEN_DAYS_NS : Int;
+  stable SHA256_K : [Nat32];
+  stable SIX_HOURS_NS : Int;
+  stable var _adCounter : Nat;
+  stable var _adGroupCounter : Nat;
+  stable var _campaignV2Counter : Nat;
+  stable var abuseCounter : [(Text, Nat)];
+  stable var accessControlState :
+    {
+      var adminAssigned : Bool;
+      userRoles : Map__605269027<Principal, UserRole__1054455867>
+    };
+  stable var adClickCooldowns : [(Text, Int)];
+  stable var adClickCooldownsV2 : [(Text, Int)];
+  stable var adGroups : [AdGroup__288247954];
+  stable var ads : [Ad__904238058];
+  stable var adsEnabled : Bool;
+  stable var advertiserProfiles : [AdvertiserProfile__388179887];
+  stable var blacklist : [BlacklistEntry__911010834];
+  stable var campaignIdCounter : Nat;
+  stable var campaigns : [Campaign__370329394];
+  stable var campaignsV2 : [CampaignV2__265684970];
+  stable var clickCounts : [(Text, Nat)];
+  stable var crawlQueue : [Nat];
+  stable var crawlQueueV2 : [(Nat, Nat)];
+  stable var impressionCounts : [(Text, Nat)];
+  stable var indexTerms : [(Text, [Nat])];
+  stable var nextId : Nat;
+  stable var nextLogId : Nat;
+  stable var nextPageId : Nat;
+  stable var nextTransactionId : Nat;
+  stable var pages : [Page__810863137];
+  stable var processedOrderIds : [Text];
+  stable var rateLimitData : [(Text, [Int])];
+  stable var securityLogs : [SecurityLog__501685180];
+  stable var userClickHistory : [(Text, [Text])];
+  stable var userInterests : [(Text, [Text])];
+  stable var userProfiles : [(Principal, UserProfile__491224006)];
+  stable var userSearchCount : [(Text, Nat)];
+  stable var userSearchHistory : [(Text, [Text])];
+  stable var walletTransactions : [Transaction__865268250];
+  stable var wallets : [(Text, AdvertiserWallet__583138673)];
+  stable var websites : [WebsiteV1__1011930380];
+  stable var websitesV2 : [WebsiteV2__1052856491];
+  stable var websitesV3 : [WebsiteV3Legacy__1037611465];
+  stable var websitesV4 : [WebsiteV4Legacy__38260820];
+  stable var websitesV5 : [WebsiteV5Legacy__409893151];
+  stable var websitesV6 : [WebsiteV6Legacy__347295972];
+  stable var websitesV7 : [Website__826170718]
+};

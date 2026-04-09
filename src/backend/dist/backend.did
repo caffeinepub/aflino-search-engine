@@ -1,0 +1,350 @@
+type http_request_result = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type http_header = 
+ record {
+   name: text;
+   value: text;
+ };
+type WebsiteStatus = 
+ variant {
+   approved;
+   pending;
+   rejected;
+ };
+type Website = 
+ record {
+   adminBoost: nat;
+   approvedAt: opt int;
+   clicks: nat;
+   description: text;
+   id: nat;
+   impressions: nat;
+   indexStatus: IndexStatus;
+   isSeed: bool;
+   isVerified: bool;
+   keywords: vec text;
+   lastCheckedAt: opt int;
+   lastCrawledAt: opt int;
+   lastVerifiedAt: opt int;
+   ownerHistory: vec text;
+   ownerId: text;
+   ownerPrincipal: opt principal;
+   ownershipStatus: OwnershipStatus;
+   seoScore: nat;
+   sitemapUrl: opt text;
+   spamScore: nat;
+   status: WebsiteStatus;
+   submittedAt: int;
+   title: text;
+   url: text;
+   verificationExpiryAt: opt int;
+   verificationStatus: VerificationStatus;
+   verificationToken: text;
+ };
+type VerificationStatus = 
+ variant {
+   expired;
+   pending;
+   verified;
+ };
+type UserRole = 
+ variant {
+   admin;
+   guest;
+   user;
+ };
+type UserProfile = record {email: text;};
+type TransformationOutput = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type TransformationInput = 
+ record {
+   context: blob;
+   response: http_request_result;
+ };
+type TransactionType = 
+ variant {
+   credit;
+   debit;
+ };
+type TransactionReason = 
+ variant {
+   ad_click;
+   refund;
+   topup;
+ };
+type Transaction = 
+ record {
+   amount: nat;
+   createdAt: int;
+   email: text;
+   id: nat;
+   reason: TransactionReason;
+   "type": TransactionType;
+ };
+type Stats = 
+ record {
+   approved: nat;
+   pending: nat;
+   total: nat;
+ };
+type SeedEntry = 
+ record {
+   description: text;
+   keywords: vec text;
+   title: text;
+   url: text;
+ };
+type SecurityLog = 
+ record {
+   details: text;
+   id: nat;
+   logType: text;
+   principalText: text;
+   timestamp: int;
+ };
+type Result_2 = 
+ variant {
+   err: text;
+   ok: record {
+         amount: nat;
+         keyId: text;
+         orderId: text;
+       };
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: AdvertiserWallet;
+ };
+type PageStatus = 
+ variant {
+   error;
+   indexed;
+   pending;
+ };
+type Page = 
+ record {
+   addedAt: int;
+   id: nat;
+   status: PageStatus;
+   url: text;
+   websiteId: nat;
+ };
+type OwnershipStatus = 
+ variant {
+   active;
+   expired;
+   reclaimed;
+ };
+type MatchType = 
+ variant {
+   broad;
+   exact;
+   phrase;
+ };
+type IndexStatus = 
+ variant {
+   error;
+   indexed;
+   notIndexed;
+   pending;
+ };
+type DiscoverFeed = 
+ record {
+   popularDomains: vec Website;
+   recentlyIndexed: vec Website;
+   recommendedForYou: vec Website;
+   trending: vec Website;
+ };
+type CampaignStatus = 
+ variant {
+   active;
+   ended;
+   paused;
+ };
+type Campaign = 
+ record {
+   advertiserEmail: text;
+   bidAmount: nat;
+   budget: nat;
+   clicks: nat;
+   createdAt: int;
+   dailyBudget: nat;
+   destinationUrl: text;
+   id: nat;
+   impressions: nat;
+   keywords: vec text;
+   name: text;
+   spend: nat;
+   status: CampaignStatus;
+ };
+type BlacklistStatus = 
+ variant {
+   blocked;
+   flagged;
+ };
+type BlacklistEntry = 
+ record {
+   addedAt: int;
+   domain: text;
+   reason: text;
+   reviewedBy: opt text;
+   status: BlacklistStatus;
+ };
+type AdvertiserWallet = 
+ record {
+   balance: nat;
+   createdAt: int;
+   email: text;
+   totalSpent: nat;
+ };
+type AdvertiserStatus = 
+ variant {
+   approved;
+   pending;
+   rejected;
+ };
+type AdvertiserProfile = 
+ record {
+   appliedAt: int;
+   balance: nat;
+   email: text;
+   reviewedAt: opt int;
+   status: AdvertiserStatus;
+ };
+type AdResult = 
+ record {
+   bidAmount: nat;
+   campaignId: nat;
+   destinationUrl: text;
+   name: text;
+   score: nat;
+ };
+type AdMatchResult = 
+ record {
+   ad: Ad;
+   keywordScore: nat;
+ };
+type Ad = 
+ record {
+   adGroupId: nat;
+   bidAmount: nat;
+   clicks: nat;
+   createdAt: int;
+   description: text;
+   destinationUrl: text;
+   id: nat;
+   impressions: nat;
+   keywords: vec text;
+   matchType: MatchType;
+   negativeKeywords: vec text;
+   title: text;
+ };
+service : {
+  _initializeAccessControl: () -> ();
+  addAdvertiserBalance: (email: text, amount: nat) -> ();
+  addBalance: (email: text, amount: nat) -> (Result);
+  addToBlacklist: (domain: text, reason: text) -> ();
+  addToCrawlQueue: (websiteId: nat) -> ();
+  applyForAdvertiser: (email: text) -> ();
+  approveAdvertiser: (email: text) -> ();
+  approveWebsite: (websiteId: nat) -> (Website);
+  assignCallerUserRole: (user: principal, role: UserRole) -> ();
+  checkAndQueueRecrawl: () -> (nat);
+  createCampaign: (email: text, name: text, budget: nat, dailyBudget: 
+   nat, bidAmount: nat, keywords: vec text, destinationUrl: text) ->
+   (Campaign);
+  createRazorpayOrder: (email: text, amount: nat) -> (Result_2);
+  createWallet: (email: text) -> (AdvertiserWallet);
+  deleteWebsite: (websiteId: nat) -> ();
+  editWebsite: (websiteId: nat, title: text, description: text, keywords:
+   vec text) -> (Website);
+  getAdsEnabled: () -> (bool) query;
+  getAdsForSearch: (searchQuery: text) -> (vec AdResult);
+  getAllAdvertiserApplications: () -> (vec AdvertiserProfile) query;
+  getAllCampaigns: () -> (vec Campaign) query;
+  getAllWebsites: () -> (vec Website) query;
+  getBlacklist: () -> (vec BlacklistEntry) query;
+  getCallerUserProfile: () -> (opt UserProfile) query;
+  getCallerUserRole: () -> (UserRole) query;
+  getCrawlQueue: () -> (vec record {
+                              nat;
+                              nat;
+                            }) query;
+  getDiscoverFeed: (emailOpt: opt text) -> (DiscoverFeed) query;
+  getFlaggedDomains: () -> (vec BlacklistEntry) query;
+  getMyAdvertiserProfile: (email: text) -> (opt AdvertiserProfile) query;
+  getMyCampaigns: (email: text) -> (vec Campaign);
+  getMyWebsites: () -> (vec Website) query;
+  getMyWebsitesByEmail: (email: text) -> (vec Website) query;
+  getPagesForWebsite: (websiteId: nat) -> (vec Page) query;
+  getPendingWebsites: () -> (vec Website) query;
+  getSecurityLogs: () -> (vec SecurityLog) query;
+  getStats: () -> (Stats) query;
+  getTransactions: (email: text) -> (vec Transaction) query;
+  getUserClickHistory: (email: text) -> (vec text) query;
+  getUserInterests: (email: text) -> (vec text) query;
+  getUserProfile: (user: principal) -> (opt UserProfile) query;
+  getUserSearchHistory: (email: text) -> (vec text) query;
+  getVerificationToken: (websiteId: nat) -> (text) query;
+  getWallet: (email: text) -> (opt AdvertiserWallet) query;
+  importSeedData: (entries: vec SeedEntry) -> (nat);
+  isCallerAdmin: () -> (bool) query;
+  pauseCampaign: (campaignId: nat) -> ();
+  rankAds: (searchQuery: text) -> (vec AdMatchResult) query;
+  recalculateAllSpamScores: () -> (nat);
+  recalculateSpamScore: (websiteId: nat) -> (nat);
+  reclaimDomain: (websiteId: nat, newOwnerEmail: text) -> (Website);
+  recordAdClick: (campaignId: nat, userSession: text) -> (Result_1);
+  recordAdClickV2: (adId: nat, userSession: text) -> (Result_1);
+  recordAdImpression: (campaignId: nat) -> ();
+  recordAdImpressionV2: (adId: nat) -> ();
+  recordClick: (url: text) -> ();
+  recordImpression: (url: text) -> ();
+  recordUserClick: (email: text, url: text) -> ();
+  recordUserSearch: (email: text, searchQuery: text) -> ();
+  refreshUserInterests: (email: text) -> ();
+  rejectAdvertiser: (email: text) -> ();
+  rejectWebsite: (websiteId: nat) -> (Website);
+  removeFromBlacklist: (domain: text) -> ();
+  requestIndexing: (websiteId: nat, pageUrl: text) -> (Website);
+  resumeCampaign: (campaignId: nat) -> ();
+  reviewFlaggedDomain: (domain: text, action:
+   variant {
+     approve;
+     block;
+     remove;
+   }) -> ();
+  runCrawler: () -> (nat);
+  runOwnershipCleanup: () -> (nat);
+  saveCallerUserProfile: (profile: UserProfile) -> ();
+  searchWebsites: (searchQuery: text, emailOpt: opt text) ->
+   (vec Website) query;
+  setAdminBoost: (websiteId: nat, boost: nat) -> (Website);
+  setAdsEnabled: (enabled: bool) -> ();
+  submitWebsite: (ownerId: text, url: text, title: text, description: 
+   text, keywords: vec text) -> (Website);
+  transform: (input: TransformationInput) -> (TransformationOutput) query;
+  updateCampaign: (campaignId: nat, name: text, budget: nat, dailyBudget:
+   nat, bidAmount: nat, keywords: vec text, destinationUrl: text) ->
+   (Campaign);
+  updateLastCrawledAt: (websiteId: nat) -> ();
+  updatePageStatus: (pageId: nat, status: PageStatus) -> ();
+  updateSitemap: (websiteId: nat, sitemapUrl: text) -> (Website);
+  verifyDomain: (websiteId: nat) -> (bool);
+  verifyRazorpayPayment: (email: text, orderId: text, paymentId: text,
+   signature: text, amount: nat) -> (Result);
+}

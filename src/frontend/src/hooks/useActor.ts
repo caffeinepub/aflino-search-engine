@@ -1,59 +1,37 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import type { backendInterface } from "../backend";
-import { createActorWithConfig } from "../config";
-import { getSecretParameter } from "../utils/urlParams";
-import { useInternetIdentity } from "./useInternetIdentity";
+import { createActorWithConfig } from "@caffeineai/core-infrastructure";
+import { useQuery } from "@tanstack/react-query";
+import { createActor } from "../backend";
+import type { backendInterface } from "../backend.d";
 
-const ACTOR_QUERY_KEY = "actor";
-export function useActor() {
-  const { identity } = useInternetIdentity();
-  const queryClient = useQueryClient();
-  const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
-    queryFn: async () => {
-      const isAuthenticated = !!identity;
+export interface UseActorResult {
+  actor: backendInterface | null;
+  isFetching: boolean;
+}
 
-      if (!isAuthenticated) {
-        // Return anonymous actor if not authenticated
-        return await createActorWithConfig();
-      }
+// Singleton actor — created once and reused across all hook calls
+let _cachedActor: backendInterface | null = null;
+let _actorPromise: Promise<backendInterface> | null = null;
 
-      const actorOptions = {
-        agentOptions: {
-          identity,
-        },
-      };
+async function getOrCreateActor(): Promise<backendInterface> {
+  if (_cachedActor) return _cachedActor;
+  if (_actorPromise) return _actorPromise;
 
-      const actor = await createActorWithConfig(actorOptions);
-      const adminToken = getSecretParameter("caffeineAdminToken") || "";
-      await actor._initializeAccessControlWithSecret(adminToken);
-      return actor;
-    },
-    // Only refetch when identity changes
+  _actorPromise = createActorWithConfig(
+    createActor as Parameters<typeof createActorWithConfig>[0],
+  ).then((actor) => {
+    _cachedActor = actor as unknown as backendInterface;
+    return _cachedActor;
+  });
+  return _actorPromise;
+}
+
+export function useActor(): UseActorResult {
+  const { data: actor = null, isFetching } = useQuery<backendInterface | null>({
+    queryKey: ["__actor__"],
+    queryFn: () => getOrCreateActor(),
     staleTime: Number.POSITIVE_INFINITY,
-    // This will cause the actor to be recreated when the identity changes
-    enabled: true,
+    retry: 3,
   });
 
-  // When the actor changes, invalidate dependent queries
-  useEffect(() => {
-    if (actorQuery.data) {
-      queryClient.invalidateQueries({
-        predicate: (query) => {
-          return !query.queryKey.includes(ACTOR_QUERY_KEY);
-        },
-      });
-      queryClient.refetchQueries({
-        predicate: (query) => {
-          return !query.queryKey.includes(ACTOR_QUERY_KEY);
-        },
-      });
-    }
-  }, [actorQuery.data, queryClient]);
-
-  return {
-    actor: actorQuery.data || null,
-    isFetching: actorQuery.isFetching,
-  };
+  return { actor, isFetching };
 }

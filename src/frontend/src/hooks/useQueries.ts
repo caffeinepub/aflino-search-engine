@@ -2,11 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AdResult,
   AdvertiserProfile,
+  AdvertiserWallet,
   BlacklistEntry,
   Campaign,
   DiscoverFeed,
   SecurityLog,
   SeedEntry,
+  Transaction,
   Variant_remove_approve_block,
   Website,
 } from "../backend.d";
@@ -18,8 +20,7 @@ export function useSearchWebsites(query: string, email?: string | null) {
     queryKey: ["search", query, email ?? "guest"],
     queryFn: async () => {
       if (!actor || !query.trim()) return [];
-      const emailOpt: [string] | [] = email ? [email] : [];
-      return actor.searchWebsites(query, emailOpt) as unknown as Website[];
+      return actor.searchWebsites(query, email ?? null) as unknown as Website[];
     },
     enabled: !!actor && !isFetching && !!query.trim(),
   });
@@ -829,8 +830,7 @@ export function useGetDiscoverFeed(email?: string | null) {
       };
       if (!actor) return empty;
       try {
-        const emailOpt: [string] | [] = email ? [email] : [];
-        return await actor.getDiscoverFeed(emailOpt);
+        return await actor.getDiscoverFeed(email ?? null);
       } catch (err) {
         console.error("[DiscoverFeed] Failed to load:", err);
         return empty;
@@ -869,6 +869,181 @@ export function useRecalculateAllSpamScores() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["allWebsites"] });
+    },
+  });
+}
+
+// ── Ad Ranking V2 types ───────────────────────────────────────────────────────
+
+export type MatchType = { broad: null } | { phrase: null } | { exact: null };
+
+export interface AdV2 {
+  id: bigint;
+  adGroupId: bigint;
+  title: string;
+  description: string;
+  destinationUrl: string;
+  keywords: string[];
+  negativeKeywords: string[];
+  matchType: MatchType;
+  bidAmount: bigint;
+  clicks: bigint;
+  impressions: bigint;
+  createdAt: bigint;
+}
+
+export interface AdMatchResult {
+  ad: AdV2;
+  keywordScore: bigint;
+}
+
+// ── Ad Ranking V2 hooks ───────────────────────────────────────────────────────
+
+export function useRankAds(query: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdMatchResult[]>({
+    queryKey: ["rankAds", query],
+    queryFn: async () => {
+      if (!actor || !query.trim()) return [];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).rankAds(query)) as AdMatchResult[];
+      } catch (err) {
+        console.error("[rankAds] Failed:", err);
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && query.trim().length > 0,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+export function useRecordAdImpressionV2() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (adId: bigint) => {
+      if (!actor) return;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (actor as any).recordAdImpressionV2(adId);
+      } catch (err) {
+        console.error("[recordAdImpressionV2] Failed:", err);
+      }
+    },
+  });
+}
+
+export function useRecordAdClickV2() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { adId: bigint; userSession: string }) => {
+      if (!actor) return null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await (actor as any).recordAdClickV2(
+          data.adId,
+          data.userSession,
+        );
+      } catch (err) {
+        console.error("[recordAdClickV2] Failed:", err);
+        return null;
+      }
+    },
+  });
+}
+
+// ── Wallet hooks ──────────────────────────────────────────────────────────────
+
+export function useGetWallet(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdvertiserWallet | null>({
+    queryKey: ["wallet", email],
+    queryFn: async () => {
+      if (!actor || !email) return null;
+      return actor.getWallet(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useGetTransactions(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Transaction[]>({
+    queryKey: ["transactions", email],
+    queryFn: async () => {
+      if (!actor || !email) return [];
+      return actor.getTransactions(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useAddBalance() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { email: string; amount: number }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.addBalance(data.email, BigInt(data.amount));
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["wallet", variables.email],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["transactions", variables.email],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["advertiserApplications"],
+      });
+    },
+  });
+}
+
+export function useCreateRazorpayOrder() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: { email: string; amountPaise: bigint }) => {
+      if (!actor) throw new Error("Not connected");
+      const result = await actor.createRazorpayOrder(
+        data.email,
+        data.amountPaise,
+      );
+      if (result.__kind__ === "err") throw new Error(result.err);
+      return result.ok;
+    },
+  });
+}
+
+export function useVerifyRazorpayPayment() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      email: string;
+      orderId: string;
+      paymentId: string;
+      signature: string;
+      amountPaise: bigint;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      const result = await actor.verifyRazorpayPayment(
+        data.email,
+        data.orderId,
+        data.paymentId,
+        data.signature,
+        data.amountPaise,
+      );
+      if (result.__kind__ === "err") throw new Error(result.err);
+      return result.ok;
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["wallet", variables.email],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["transactions", variables.email],
+      });
     },
   });
 }

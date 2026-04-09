@@ -1,8 +1,11 @@
-import AccessControl "./authorization/access-control";
-import MixinAuthorization "./authorization/MixinAuthorization";
-import Outcall "./http-outcalls/outcall";
+import AccessControl "mo:caffeineai-authorization/access-control";
+import MixinAuthorization "mo:caffeineai-authorization/MixinAuthorization";
+import Outcall "mo:caffeineai-http-outcalls/outcall";
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
+import Nat32 "mo:core/Nat32";
+import Blob "mo:core/Blob";
 import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Int "mo:core/Int";
@@ -297,8 +300,73 @@ actor {
     score : Nat;
   };
 
+  // ─── New Ad Ranking Types (V2 Ad System) ─────────────────────────────────
+
+  public type CampaignStatusV2 = { #active; #paused };
+
+  public type CampaignV2 = {
+    id : Nat;
+    advertiserEmail : Text;
+    name : Text;
+    status : CampaignStatusV2;
+    dailyBudget : Nat;
+    totalBudget : Nat;
+    spent : Nat;
+    createdAt : Int;
+  };
+
+  public type MatchType = { #broad; #phrase; #exact };
+
+  public type AdGroup = {
+    id : Nat;
+    campaignId : Nat;
+    name : Text;
+  };
+
+  public type Ad = {
+    id : Nat;
+    adGroupId : Nat;
+    title : Text;
+    description : Text;
+    destinationUrl : Text;
+    keywords : [Text];
+    negativeKeywords : [Text];
+    matchType : MatchType;
+    bidAmount : Nat;
+    clicks : Nat;
+    impressions : Nat;
+    createdAt : Int;
+  };
+
+  public type AdMatchResult = {
+    ad : Ad;
+    keywordScore : Nat;
+  };
+
   public type UserProfile = {
     email : Text;
+  };
+
+  // ─── Wallet System Types ──────────────────────────────────────────────────
+
+  public type AdvertiserWallet = {
+    email : Text;
+    balance : Nat;
+    totalSpent : Nat;
+    createdAt : Int;
+  };
+
+  public type TransactionType = { #credit; #debit };
+
+  public type TransactionReason = { #topup; #ad_click; #refund };
+
+  public type Transaction = {
+    id : Nat;
+    email : Text;
+    amount : Nat;
+    type_ : TransactionType;
+    reason : TransactionReason;
+    createdAt : Int;
   };
 
   // ─── Stable State ─────────────────────────────────────────────────────────
@@ -348,6 +416,16 @@ actor {
   var adsEnabled : Bool = false;
   var adClickCooldowns : [(Text, Int)] = [];
 
+  // ─── V2 Ad System State ───────────────────────────────────────────────────
+  var campaignsV2 : [CampaignV2] = [];
+  var adGroups : [AdGroup] = [];
+  var ads : [Ad] = [];
+  var _campaignV2Counter : Nat = 1;
+  var _adGroupCounter : Nat = 1;
+  var _adCounter : Nat = 1;
+  // Cooldown store for V2 ad clicks (key = userSession_adId)
+  var adClickCooldownsV2 : [(Text, Int)] = [];
+
   var userProfiles : [(Principal, UserProfile)] = [];
 
   // Crawler queue V1 (legacy, migrated on postupgrade)
@@ -372,6 +450,17 @@ actor {
   // ─── User Search Count ────────────────────────────────────────────────────
   // Tracks cumulative search count per user for throttled recomputation
   stable var userSearchCount : [(Text, Nat)] = [];
+
+  // ─── Wallet System State ──────────────────────────────────────────────────
+  // Keyed by email; balance is the single source of truth for ad billing.
+  var wallets : [(Text, AdvertiserWallet)] = [];
+  var walletTransactions : [Transaction] = [];
+  var nextTransactionId : Nat = 1;
+
+  // ─── Razorpay Deduplication Store ─────────────────────────────────────────
+  // Stores processed Razorpay order IDs to prevent double-spend.
+  // MUST be stable so IDs survive canister upgrades — prevents replay attacks.
+  stable var processedOrderIds : [Text] = [];
 
   // ─── Migration helpers ────────────────────────────────────────────────────
 
@@ -952,6 +1041,496 @@ actor {
       case (#guest) { Runtime.trap("User is not registered") };
       case (_) {};
     };
+  };
+
+  // ─── Wallet Helpers ───────────────────────────────────────────────────────
+
+  func getWalletInternal(email : Text) : ?AdvertiserWallet {
+    for ((k, w) in wallets.vals()) {
+      if (k == email) { return ?w };
+    };
+    null
+  };
+
+  func createWalletInternal(email : Text) : AdvertiserWallet {
+    switch (getWalletInternal(email)) {
+      case (?existing) { return existing };
+      case (null) {};
+    };
+    let wallet : AdvertiserWallet = {
+      email;
+      balance = 0;
+      totalSpent = 0;
+      createdAt = Time.now();
+    };
+    wallets := wallets.concat([(email, wallet)]);
+    wallet
+  };
+
+  func appendTransaction(email : Text, amount : Nat, type_ : TransactionType, reason : TransactionReason) {
+    let tx : Transaction = {
+      id = nextTransactionId;
+      email;
+      amount;
+      type_;
+      reason;
+      createdAt = Time.now();
+    };
+    nextTransactionId += 1;
+    walletTransactions := walletTransactions.concat([tx]);
+  };
+
+  // Private: deduct bidAmount from wallet; auto-creates wallet with balance=0 if missing.
+  // Returns #err if balance < bidAmount or amount == 0.
+  func deductOnClick(email : Text, bidAmount : Nat) : Result<(), Text> {
+    if (bidAmount == 0) { return #err("Invalid deduction amount") };
+    // Auto-create wallet if not found (with balance=0)
+    let wallet : AdvertiserWallet = switch (getWalletInternal(email)) {
+      case (?w) { w };
+      case (null) { createWalletInternal(email) };
+    };
+    if (wallet.balance < bidAmount) {
+      return #err("Insufficient balance");
+    };
+    let updated : AdvertiserWallet = {
+      wallet with
+      balance    = wallet.balance - bidAmount;
+      totalSpent = wallet.totalSpent + bidAmount;
+    };
+    var found = false;
+    wallets := wallets.map<(Text, AdvertiserWallet), (Text, AdvertiserWallet)>(
+      func(entry) {
+        if (entry.0 == email) {
+          found := true;
+          (email, updated)
+        } else { entry }
+      }
+    );
+    if (not found) {
+      wallets := wallets.concat([(email, updated)]);
+    };
+    appendTransaction(email, bidAmount, #debit, #ad_click);
+    #ok(())
+  };
+
+  // ─── Wallet Public API ────────────────────────────────────────────────────
+
+  // Returns existing wallet or null (does NOT auto-create on read).
+  public query func getWallet(email : Text) : async ?AdvertiserWallet {
+    getWalletInternal(email)
+  };
+
+  // Creates wallet if not exists and returns it.
+  public shared func createWallet(email : Text) : async AdvertiserWallet {
+    if (email.size() == 0 or email.size() > 200) {
+      Runtime.trap("Invalid email");
+    };
+    createWalletInternal(email)
+  };
+
+  // Admin-only: top up wallet, creates it if missing, records credit transaction.
+  public shared ({ caller }) func addBalance(email : Text, amount : Nat) : async Result<AdvertiserWallet, Text> {
+    requireAdmin(caller);
+    if (amount == 0) { return #err("Amount must be greater than 0") };
+    if (email.size() == 0 or email.size() > 200) { return #err("Invalid email") };
+    // Auto-create wallet if not found
+    ignore createWalletInternal(email);
+    var updated : ?AdvertiserWallet = null;
+    wallets := wallets.map<(Text, AdvertiserWallet), (Text, AdvertiserWallet)>(
+      func(entry) {
+        if (entry.0 == email) {
+          let w : AdvertiserWallet = {
+            entry.1 with
+            balance = entry.1.balance + amount;
+          };
+          updated := ?w;
+          (email, w)
+        } else { entry }
+      }
+    );
+    switch (updated) {
+      case (null) { #err("Wallet not found") };
+      case (?w) {
+        appendTransaction(email, amount, #credit, #topup);
+        #ok(w)
+      };
+    };
+  };
+
+  // Returns all transactions for a given email, sorted by createdAt descending.
+  public query func getTransactions(email : Text) : async [Transaction] {
+    let txs = walletTransactions.filter(func(tx : Transaction) : Bool { tx.email == email });
+    txs.sort(func(a : Transaction, b : Transaction) : { #less; #equal; #greater } {
+      if (a.createdAt > b.createdAt) #less
+      else if (a.createdAt < b.createdAt) #greater
+      else #equal
+    })
+  };
+
+  // ─── Razorpay Config ──────────────────────────────────────────────────────
+  // Key Secret is NEVER logged, returned in responses, or exposed anywhere.
+  let RAZORPAY_KEY_ID     : Text = "rzp_test_xxxxxxxx";
+  let RAZORPAY_KEY_SECRET : Text = "rzp_secret_xxxxxxxx";
+  let RAZORPAY_ORDERS_URL : Text = "https://api.razorpay.com/v1/orders";
+
+  // ─── Base64 Encoding (for Basic Auth header) ──────────────────────────────
+  // Standard Base64 alphabet
+  let BASE64_CHARS : [Char] = [
+    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+    'Q','R','S','T','U','V','W','X','Y','Z',
+    'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p',
+    'q','r','s','t','u','v','w','x','y','z',
+    '0','1','2','3','4','5','6','7','8','9','+','/'
+  ];
+
+  func base64Encode(input : [Nat8]) : Text {
+    var result = "";
+    let len = input.size();
+    var i = 0;
+    while (i + 2 < len) {
+      let b0 = Nat.fromNat8(input[i]);
+      let b1 = Nat.fromNat8(input[i + 1]);
+      let b2 = Nat.fromNat8(input[i + 2]);
+      let idx0 = b0 / 4;
+      let idx1 = ((b0 % 4) * 16) + (b1 / 16);
+      let idx2 = ((b1 % 16) * 4) + (b2 / 64);
+      let idx3 = b2 % 64;
+      result := result # Text.fromChar(BASE64_CHARS[idx0])
+                       # Text.fromChar(BASE64_CHARS[idx1])
+                       # Text.fromChar(BASE64_CHARS[idx2])
+                       # Text.fromChar(BASE64_CHARS[idx3]);
+      i += 3;
+    };
+    let rem = len - i;
+    if (rem == 1) {
+      let b0 = Nat.fromNat8(input[i]);
+      result := result # Text.fromChar(BASE64_CHARS[b0 / 4])
+                       # Text.fromChar(BASE64_CHARS[(b0 % 4) * 16])
+                       # "==";
+    } else if (rem == 2) {
+      let b0 = Nat.fromNat8(input[i]);
+      let b1 = Nat.fromNat8(input[i + 1]);
+      result := result # Text.fromChar(BASE64_CHARS[b0 / 4])
+                       # Text.fromChar(BASE64_CHARS[((b0 % 4) * 16) + (b1 / 16)])
+                       # Text.fromChar(BASE64_CHARS[(b1 % 16) * 4])
+                       # "=";
+    };
+    result
+  };
+
+  func textToBytes(t : Text) : [Nat8] {
+    let blob = t.encodeUtf8();
+    blob.toArray()
+  };
+
+  func base64EncodeText(t : Text) : Text {
+    base64Encode(textToBytes(t))
+  };
+
+  // ─── SHA-256 Implementation (pure Motoko) ─────────────────────────────────
+  // Standard SHA-256 per FIPS 180-4.
+  // Uses Nat32 for all word operations to match SHA-256 word size.
+
+  let SHA256_K : [Nat32] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+
+  func rotr32(x : Nat32, n : Nat32) : Nat32 {
+    (x >> n) | (x << (32 - n))
+  };
+
+  func sha256Compress(h : [var Nat32], w : [var Nat32]) {
+    var a = h[0]; var b = h[1]; var c = h[2]; var d = h[3];
+    var e = h[4]; var f = h[5]; var g = h[6]; var hh = h[7];
+    var i : Nat = 0;
+    while (i < 64) {
+      let s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+      let ch = (e & f) ^ ((^e) & g);
+      let temp1 = hh +% s1 +% ch +% SHA256_K[i] +% w[i];
+      let s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+      let maj = (a & b) ^ (a & c) ^ (b & c);
+      let temp2 = s0 +% maj;
+      hh := g; g := f; f := e; e := d +% temp1;
+      d := c; c := b; b := a; a := temp1 +% temp2;
+      i += 1;
+    };
+    h[0] +%= a; h[1] +%= b; h[2] +%= c; h[3] +%= d;
+    h[4] +%= e; h[5] +%= f; h[6] +%= g; h[7] +%= hh;
+  };
+
+  func sha256Pad(msgBytes : [Nat8]) : [[Nat8]] {
+    let msgLen = msgBytes.size();
+    // bit length as 8-byte big-endian
+    let bitLen : Nat = msgLen * 8;
+    // Padding: 1 byte 0x80, then zeros, then 8-byte length
+    // Total padded length must be multiple of 64
+    let padLen : Nat = if ((msgLen + 9) % 64 == 0) { 0 } else { 64 - ((msgLen + 9) % 64) };
+    let totalLen : Nat = msgLen + 1 + padLen + 8;
+    let padded = Array.tabulate(totalLen, func(i : Nat) : Nat8 {
+      if (i < msgLen) { msgBytes[i] }
+      else if (i == msgLen) { 0x80 }
+      else if (i < msgLen + 1 + padLen) { 0x00 }
+      else {
+        // 8-byte big-endian bit length
+        // offset 0 = most-significant byte (bits 56-63 of bitLen)
+        let byteOffset = i - (msgLen + 1 + padLen);
+        let shift : Nat = (7 - byteOffset) * 8;
+        // Extract byte at given shift position
+        let divisor = Nat.pow(2, shift);
+        Nat8.fromNat((bitLen / divisor) % 256)
+      }
+    });
+    // Split into 64-byte chunks
+    let numChunks = totalLen / 64;
+    Array.tabulate<[Nat8]>(numChunks, func(ci : Nat) : [Nat8] {
+      Array.tabulate<Nat8>(64, func(j : Nat) : Nat8 { padded[ci * 64 + j] })
+    })
+  };
+
+  func sha256(msgBytes : [Nat8]) : [Nat8] {
+    let h : [var Nat32] = [var
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    ];
+    let chunks = sha256Pad(msgBytes);
+    for (chunk in chunks.vals()) {
+      // Build message schedule
+      let w : [var Nat32] = [var
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+      ];
+      var wi : Nat = 0;
+      while (wi < 16) {
+        let j = wi * 4;
+        w[wi] := (Nat32.fromNat(chunk[j].toNat())     << 24) |
+                 (Nat32.fromNat(chunk[j + 1].toNat()) << 16) |
+                 (Nat32.fromNat(chunk[j + 2].toNat()) << 8)  |
+                  Nat32.fromNat(chunk[j + 3].toNat());
+        wi += 1;
+      };
+      while (wi < 64) {
+        let s0 = rotr32(w[wi - 15], 7) ^ rotr32(w[wi - 15], 18) ^ (w[wi - 15] >> 3);
+        let s1 = rotr32(w[wi - 2],  17) ^ rotr32(w[wi - 2],  19) ^ (w[wi - 2]  >> 10);
+        w[wi] := w[wi - 16] +% s0 +% w[wi - 7] +% s1;
+        wi += 1;
+      };
+      sha256Compress(h, w);
+    };
+    // Convert hash words to bytes (big-endian)
+    Array.tabulate<Nat8>(32, func(i : Nat) : Nat8 {
+      let word = h[i / 4];
+      let shift : Nat32 = Nat32.fromNat((3 - (i % 4)) * 8);
+      Nat8.fromNat(((word >> shift) & 0xff).toNat())
+    })
+  };
+
+  // ─── HMAC-SHA256 Implementation (pure Motoko) ─────────────────────────────
+  // Standard HMAC per RFC 2104. Block size = 64 bytes, hash output = 32 bytes.
+
+  func hmacSha256(keyBytes : [Nat8], msgBytes : [Nat8]) : [Nat8] {
+    let blockSize = 64;
+
+    // Step 1: Normalize key to exactly blockSize bytes
+    var key : [Nat8] = if (keyBytes.size() > blockSize) {
+      // Key longer than block: hash it first
+      let hashed = sha256(keyBytes);
+      Array.tabulate<Nat8>(blockSize, func(i : Nat) : Nat8 {
+        if (i < hashed.size()) { hashed[i] } else { 0x00 }
+      })
+    } else {
+      // Key shorter or equal: pad with zeros
+      Array.tabulate<Nat8>(blockSize, func(i : Nat) : Nat8 {
+        if (i < keyBytes.size()) { keyBytes[i] } else { 0x00 }
+      })
+    };
+
+    // Step 2: ipad = key XOR 0x36 (repeated)
+    let ipad : [Nat8] = Array.tabulate<Nat8>(blockSize, func(i : Nat) : Nat8 {
+      key[i] ^ 0x36
+    });
+
+    // Step 3: opad = key XOR 0x5C (repeated)
+    let opad : [Nat8] = Array.tabulate<Nat8>(blockSize, func(i : Nat) : Nat8 {
+      key[i] ^ 0x5c
+    });
+
+    // Step 4: inner = SHA256(ipad || message)
+    let innerInput : [Nat8] = ipad.concat(msgBytes);
+    let innerHash  : [Nat8] = sha256(innerInput);
+
+    // Step 5: outer = SHA256(opad || inner)
+    let outerInput : [Nat8] = opad.concat(innerHash);
+    sha256(outerInput)
+  };
+
+  // ─── Hex Encoding ─────────────────────────────────────────────────────────
+  let HEX_CHARS : [Char] = ['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'];
+
+  func toHex(bytes : [Nat8]) : Text {
+    var result = "";
+    for (b in bytes.vals()) {
+      let hi = Nat.fromNat8(b) / 16;
+      let lo = Nat.fromNat8(b) % 16;
+      result := result # Text.fromChar(HEX_CHARS[hi]) # Text.fromChar(HEX_CHARS[lo]);
+    };
+    result
+  };
+
+  // Constant-time comparison: iterates ALL bytes regardless of early mismatch.
+  // Prevents timing attacks on signature verification.
+  func constantTimeEqual(a : Text, b : Text) : Bool {
+    let aBytes = textToBytes(a);
+    let bBytes = textToBytes(b);
+    if (aBytes.size() != bBytes.size()) { return false };
+    var diff : Nat8 = 0;
+    var i = 0;
+    while (i < aBytes.size()) {
+      diff := diff | (aBytes[i] ^ bBytes[i]);
+      i += 1;
+    };
+    diff == 0
+  };
+
+  // ─── Razorpay: Create Order ───────────────────────────────────────────────
+  // Creates a Razorpay order via HTTP outcall.
+  // Amount in paise (100 = ₹1). Min 100, max 100_000_000.
+  // Returns { orderId, keyId, amount } on success.
+  public shared func createRazorpayOrder(email : Text, amount : Nat) : async Result<{ orderId : Text; keyId : Text; amount : Nat }, Text> {
+    // ── Validate amount ──────────────────────────────────────────────────────
+    if (amount < 100) { return #err("Minimum amount is 100 paise (₹1)") };
+    if (amount > 100_000_000) { return #err("Maximum amount is 100000000 paise (₹10,00,000)") };
+    if (email.size() == 0 or email.size() > 200) { return #err("Invalid email") };
+
+    // ── Build Basic Auth header (Key ID:Key Secret as Base64) ────────────────
+    // Secret is used internally here only — never returned or logged.
+    let credentials = base64EncodeText(RAZORPAY_KEY_ID # ":" # RAZORPAY_KEY_SECRET);
+    let authHeader = "Basic " # credentials;
+
+    // ── Build JSON body ──────────────────────────────────────────────────────
+    let receipt = email # "_" # Time.now().toText();
+    let requestBody = "{\"amount\":" # amount.toText()
+      # ",\"currency\":\"INR\",\"receipt\":\""
+      # receipt # "\"}";
+
+    let headers : [Outcall.Header] = [
+      { name = "Authorization";  value = authHeader },
+      { name = "Content-Type";   value = "application/json" },
+    ];
+
+    try {
+      let responseText = await Outcall.httpPostRequest(
+        RAZORPAY_ORDERS_URL,
+        headers,
+        requestBody,
+        transform
+      );
+
+      // ── Parse orderId from JSON response ─────────────────────────────────
+      // Response format: {"id":"order_xxx","entity":"order","amount":...,...}
+      // Extract the "id" field value
+      if (not responseText.contains(#text "\"id\":\"")) {
+        return #err("Failed to create order: " # responseText.size().toText() # " bytes returned");
+      };
+      let afterId = responseText.split(#text "\"id\":\"");
+      ignore afterId.next();
+      switch (afterId.next()) {
+        case (null) { return #err("Could not parse order ID") };
+        case (?rest) {
+          let parts = rest.split(#text "\"");
+          switch (parts.next()) {
+            case (null) { return #err("Could not parse order ID value") };
+            case (?orderId) {
+              if (orderId.size() == 0) { return #err("Empty order ID returned") };
+              #ok({ orderId; keyId = RAZORPAY_KEY_ID; amount })
+            };
+          }
+        };
+      }
+    } catch (_) {
+      #err("HTTP outcall failed — check network or Razorpay credentials")
+    }
+  };
+
+  // ─── Razorpay: Verify Payment ─────────────────────────────────────────────
+  // Verifies HMAC-SHA256 signature and credits wallet ONLY after verification.
+  // Signature = HMAC-SHA256(orderId | "|" | paymentId, KEY_SECRET).
+  // Deduplicates by orderId to prevent double-spend.
+  public shared func verifyRazorpayPayment(
+    email     : Text,
+    orderId   : Text,
+    paymentId : Text,
+    signature : Text,
+    amount    : Nat
+  ) : async Result<AdvertiserWallet, Text> {
+    // ── Input validation ─────────────────────────────────────────────────────
+    if (email.size() == 0 or email.size() > 200) { return #err("Invalid email") };
+    if (orderId.size() == 0 or orderId.size() > 100) { return #err("Invalid order ID") };
+    if (paymentId.size() == 0 or paymentId.size() > 100) { return #err("Invalid payment ID") };
+    if (signature.size() == 0 or signature.size() > 200) { return #err("Invalid signature") };
+    if (amount < 100) { return #err("Minimum amount is 100 paise") };
+    if (amount > 100_000_000) { return #err("Amount out of range") };
+
+    // ── Deduplication: reject already-processed order IDs ────────────────────
+    for (oid in processedOrderIds.vals()) {
+      if (oid == orderId) { return #err("Order already processed") };
+    };
+
+    // ── HMAC-SHA256 signature verification ───────────────────────────────────
+    // Razorpay signature = HMAC_SHA256(orderId + "|" + paymentId, KEY_SECRET)
+    let message     : Text  = orderId # "|" # paymentId;
+    let keyBytes    : [Nat8] = textToBytes(RAZORPAY_KEY_SECRET);
+    let msgBytes    : [Nat8] = textToBytes(message);
+    let computedHmac : [Nat8] = hmacSha256(keyBytes, msgBytes);
+    let computedHex  : Text   = toHex(computedHmac);
+
+    // Constant-time comparison — never short-circuits on mismatch
+    if (not constantTimeEqual(computedHex, signature)) {
+      return #err("Invalid payment signature");
+    };
+
+    // ── Mark order as processed (deduplication) ────────────────────────────
+    processedOrderIds := processedOrderIds.concat([orderId]);
+
+    // ── Credit wallet ─────────────────────────────────────────────────────────
+    ignore createWalletInternal(email);
+    var updated : ?AdvertiserWallet = null;
+    wallets := wallets.map<(Text, AdvertiserWallet), (Text, AdvertiserWallet)>(
+      func(entry) {
+        if (entry.0 == email) {
+          let w : AdvertiserWallet = {
+            entry.1 with
+            balance = entry.1.balance + amount;
+          };
+          updated := ?w;
+          (email, w)
+        } else { entry }
+      }
+    );
+    switch (updated) {
+      case (null) { return #err("Wallet update failed") };
+      case (?wallet) {
+        // Record credit transaction (reason = #topup, reusing existing variant)
+        appendTransaction(email, amount, #credit, #topup);
+        #ok(wallet)
+      };
+    }
   };
 
   // ─── Ranking Helpers ─────────────────────────────────────────────────────
@@ -2137,6 +2716,22 @@ actor {
       } else p
     });
     if (not found) { Runtime.trap("Advertiser not found") };
+    // Also credit the wallet (auto-create if missing)
+    ignore createWalletInternal(email);
+    var walletFound = false;
+    wallets := wallets.map<(Text, AdvertiserWallet), (Text, AdvertiserWallet)>(
+      func(entry) {
+        if (entry.0 == email) {
+          walletFound := true;
+          (email, { entry.1 with balance = entry.1.balance + amount })
+        } else { entry }
+      }
+    );
+    if (not walletFound) {
+      let w : AdvertiserWallet = { email; balance = amount; totalSpent = 0; createdAt = Time.now() };
+      wallets := wallets.concat([(email, w)]);
+    };
+    appendTransaction(email, amount, #credit, #topup);
   };
 
   // ─── Ad Engine ────────────────────────────────────────────────────────────
@@ -2290,7 +2885,12 @@ actor {
         case (#active) {
           switch (getAdvertiser(c.advertiserEmail)) {
             case (?advertiser) {
-              if (advertiser.balance > 0) {
+              // Check both legacy profile balance AND wallet balance
+              let walletBalance : Nat = switch (getWalletInternal(c.advertiserEmail)) {
+                case (?w) { w.balance };
+                case (null) { 0 };
+              };
+              if (advertiser.balance > 0 and walletBalance > 0) {
                 // ── Advanced relevance: keyword + URL + name matches ────────────
                 var keywordMatches = 0;
                 let urlLower = c.destinationUrl.toLower();
@@ -2384,7 +2984,7 @@ actor {
   func extractBetween(html : Text, openTag : Text, closeTag : Text) : ?Text {
     let lower = html.toLower();
     let openLower = openTag.toLower();
-    let closeLower = closeTag.toLower();
+    let _closeLower = closeTag.toLower();
     if (not lower.contains(#text openLower)) return null;
     // Find start position by splitting
     let afterOpen = lower.split(#text openLower);
@@ -3119,5 +3719,240 @@ actor {
     { trending; recentlyIndexed; popularDomains; recommendedForYou }
   };
 
+  // ─── V2 Ad Matching & Ranking ─────────────────────────────────────────────
+
+  // Private: keyword matching engine for ads
+  // Exact match → score 100, Phrase match → score 70, Broad match → score 40
+  // Negative keywords block the ad entirely.
+  func getMatchingAds(searchQuery : Text) : [AdMatchResult] {
+    if (not adsEnabled) { return [] };
+    let trimmed = searchQuery.trim(#char ' ');
+    if (trimmed.size() == 0) { return [] };
+    let qLower = trimmed.toLower();
+    let queryTokens = tokenize(trimmed);
+
+    var results : [AdMatchResult] = [];
+
+    for (ad in ads.vals()) {
+      // ── 1. Negative keyword check: block ad if query contains any neg keyword ──
+      var blocked = false;
+      for (negKw in ad.negativeKeywords.vals()) {
+        let negKwLower = negKw.toLower();
+        if (negKw.size() > 0 and qLower.contains(#text negKwLower)) {
+          blocked := true;
+        };
+      };
+      if (not blocked) {
+        // ── 2. Keyword match by matchType ────────────────────────────────────
+        var keywordScore : Nat = 0;
+        switch (ad.matchType) {
+          case (#exact) {
+            // All keywords joined form exact query (order-insensitive single-keyword check)
+            var anyExact = false;
+            for (kw in ad.keywords.vals()) {
+              if (kw.toLower() == qLower) { anyExact := true };
+            };
+            if (anyExact) { keywordScore := 100 };
+          };
+          case (#phrase) {
+            // All ad keywords appear as substrings inside query
+            var allPresent = ad.keywords.size() > 0;
+            for (kw in ad.keywords.vals()) {
+              let kwLower = kw.toLower();
+              if (kw.size() > 0 and not qLower.contains(#text kwLower)) {
+                allPresent := false;
+              };
+            };
+            if (allPresent and ad.keywords.size() > 0) { keywordScore := 70 };
+          };
+          case (#broad) {
+            // Any keyword token matches any query token
+            var anyMatch = false;
+            for (kw in ad.keywords.vals()) {
+              for (kwToken in tokenize(kw).vals()) {
+                for (qt in queryTokens.vals()) {
+                  if (kwToken == qt) { anyMatch := true };
+                };
+              };
+            };
+            if (anyMatch) { keywordScore := 40 };
+          };
+        };
+        if (keywordScore > 0) {
+          results := results.concat([{ ad; keywordScore }]);
+        };
+      };
+    };
+    results
+  };
+
+  // Public query: rank ads for a search query using the ad ranking formula
+  // adScore = (bidAmount * 10) + (CTR * 1000) + keywordScore
+  // Filters out ads whose parent campaign has exhausted its budget.
+  // Returns [] when adsEnabled == false.
+  public query func rankAds(searchQuery : Text) : async [AdMatchResult] {
+    if (not adsEnabled) { return [] };
+    let matches = getMatchingAds(searchQuery);
+    if (matches.size() == 0) { return [] };
+
+    // Score each match and filter by budget
+    type ScoredMatch = { match : AdMatchResult; adScore : Int };
+    var scored : [ScoredMatch] = [];
+
+    for (m in matches.vals()) {
+      let ad = m.ad;
+      // Find parent AdGroup
+      let parentGroupOpt = adGroups.find(func(g : AdGroup) : Bool { g.id == ad.adGroupId });
+      switch (parentGroupOpt) {
+        case (null) {}; // orphaned ad — skip
+        case (?group) {
+          // Find parent CampaignV2
+          let parentCampaignOpt = campaignsV2.find(func(c : CampaignV2) : Bool { c.id == group.campaignId });
+          switch (parentCampaignOpt) {
+            case (null) {}; // orphaned group — skip
+            case (?campaign) {
+              // Only active campaigns
+              switch (campaign.status) {
+                case (#paused) {}; // skip paused
+                case (#active) {
+                  // Budget enforcement
+                  if (campaign.spent >= campaign.totalBudget) {}
+                  else if (campaign.dailyBudget > 0 and campaign.spent >= campaign.dailyBudget) {}
+                  else {
+                    // Additional wallet balance guard: stop ads if wallet is empty
+                    let walletBalance : Nat = switch (getWalletInternal(campaign.advertiserEmail)) {
+                      case (?w) { w.balance };
+                      case (null) { 0 };
+                    };
+                    if (walletBalance > 0) {
+                      // Compute adScore
+                      let ctr : Int = if (ad.impressions > 0) {
+                        (ad.clicks * 1000) / ad.impressions
+                      } else { 0 };
+                      let adScore : Int = (ad.bidAmount * 10) + ctr + m.keywordScore;
+                      scored := scored.concat([{ match = m; adScore }]);
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+
+    // Sort by adScore descending
+    let sortedScored = scored.sort(
+      func(a : ScoredMatch, b : ScoredMatch) : { #less; #equal; #greater } {
+        if (a.adScore > b.adScore) #less
+        else if (a.adScore < b.adScore) #greater
+        else #equal
+      }
+    );
+    sortedScored.map(func(s : ScoredMatch) : AdMatchResult { s.match })
+  };
+
+  // Public update: record an ad click (V2), deduct CPC from advertiser balance
+  // Enforces 30s cooldown per (userSession_adId) to prevent self-clicks.
+  public shared func recordAdClickV2(adId : Nat, userSession : Text) : async Result<(), Text> {
+    let key = userSession # "_" # adId.toText();
+    let now = Time.now();
+    let cooldownNs : Int = 30_000_000_000;
+
+    // ── Cooldown check ────────────────────────────────────────────────────────
+    var lastClick : ?Int = null;
+    var foundCooldown = false;
+    adClickCooldownsV2 := adClickCooldownsV2.map<(Text, Int), (Text, Int)>(
+      func(entry) {
+        if (entry.0 == key) {
+          foundCooldown := true;
+          lastClick := ?entry.1;
+          (key, now)
+        } else { entry }
+      }
+    );
+    if (not foundCooldown) {
+      adClickCooldownsV2 := adClickCooldownsV2.concat([(key, now)]);
+    } else {
+      switch (lastClick) {
+        case (?timestamp) {
+          if (now - timestamp < cooldownNs) { return #err("Cooldown active") };
+        };
+        case (null) {};
+      };
+    };
+
+    // ── Find the ad ───────────────────────────────────────────────────────────
+    let adOpt = ads.find(func(a : Ad) : Bool { a.id == adId });
+    switch (adOpt) {
+      case (null) { return #err("Ad not found") };
+      case (?ad) {
+        // Find parent AdGroup
+        let groupOpt = adGroups.find(func(g : AdGroup) : Bool { g.id == ad.adGroupId });
+        switch (groupOpt) {
+          case (null) { return #err("AdGroup not found") };
+          case (?group) {
+            // Find parent CampaignV2
+            let campaignOpt = campaignsV2.find(func(c : CampaignV2) : Bool { c.id == group.campaignId });
+            switch (campaignOpt) {
+              case (null) { return #err("Campaign not found") };
+              case (?campaign) {
+                // Budget checks
+                if (campaign.spent >= campaign.totalBudget) {
+                  return #err("Budget exhausted");
+                };
+                if (campaign.dailyBudget > 0 and campaign.spent >= campaign.dailyBudget) {
+                  return #err("Daily budget reached");
+                };
+                // Find advertiser profile
+                let advertiserOpt = advertiserProfiles.find(
+                  func(p : AdvertiserProfile) : Bool { p.email == campaign.advertiserEmail }
+                );
+                switch (advertiserOpt) {
+                  case (null) { return #err("Advertiser not found") };
+                  case (?advertiser) {
+                    if (advertiser.balance < ad.bidAmount) {
+                      return #err("Insufficient balance");
+                    };
+                    // ── Apply deductions ──────────────────────────────────────
+                    // Update ad: clicks += 1
+                    ads := ads.map(func(a : Ad) : Ad {
+                      if (a.id == adId) { { a with clicks = a.clicks + 1 } } else { a }
+                    });
+                    // Update campaign: spent += bidAmount
+                    let costPerClick = ad.bidAmount;
+                    campaignsV2 := campaignsV2.map(func(c : CampaignV2) : CampaignV2 {
+                      if (c.id == campaign.id) {
+                        { c with spent = c.spent + costPerClick }
+                      } else { c }
+                    });
+                    // Deduct from wallet (single source of truth for billing)
+                    switch (deductOnClick(campaign.advertiserEmail, costPerClick)) {
+                      case (#err(msg)) { return #err(msg) };
+                      case (#ok(())) {};
+                    };
+                    // Keep legacy advertiserProfiles balance in sync
+                    advertiserProfiles := advertiserProfiles.map(func(p : AdvertiserProfile) : AdvertiserProfile {
+                      if (p.email == campaign.advertiserEmail) {
+                        { p with balance = if (p.balance >= costPerClick) { p.balance - costPerClick } else { 0 } }
+                      } else { p }
+                    });
+                    #ok(())
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+
+  // Public update: record an ad impression (V2)
+  public shared func recordAdImpressionV2(adId : Nat) : async () {
+    ads := ads.map(func(a : Ad) : Ad {
+      if (a.id == adId) { { a with impressions = a.impressions + 1 } } else { a }
+    });
+  };
 
 };

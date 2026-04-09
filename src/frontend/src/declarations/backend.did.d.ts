@@ -10,6 +10,21 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface Ad {
+  'id' : bigint,
+  'matchType' : MatchType,
+  'clicks' : bigint,
+  'title' : string,
+  'createdAt' : bigint,
+  'impressions' : bigint,
+  'description' : string,
+  'bidAmount' : bigint,
+  'keywords' : Array<string>,
+  'adGroupId' : bigint,
+  'destinationUrl' : string,
+  'negativeKeywords' : Array<string>,
+}
+export interface AdMatchResult { 'ad' : Ad, 'keywordScore' : bigint }
 export interface AdResult {
   'name' : string,
   'campaignId' : bigint,
@@ -27,6 +42,12 @@ export interface AdvertiserProfile {
 export type AdvertiserStatus = { 'pending' : null } |
   { 'approved' : null } |
   { 'rejected' : null };
+export interface AdvertiserWallet {
+  'balance' : bigint,
+  'createdAt' : bigint,
+  'email' : string,
+  'totalSpent' : bigint,
+}
 export interface BlacklistEntry {
   'status' : BlacklistStatus,
   'domain' : string,
@@ -54,7 +75,39 @@ export interface Campaign {
 export type CampaignStatus = { 'active' : null } |
   { 'ended' : null } |
   { 'paused' : null };
-export type Result = { 'ok' : null } |
+export interface DiscoverFeed {
+  'popularDomains' : Array<Website>,
+  'recentlyIndexed' : Array<Website>,
+  'trending' : Array<Website>,
+  'recommendedForYou' : Array<Website>,
+}
+export type IndexStatus = { 'pending' : null } |
+  { 'error' : null } |
+  { 'notIndexed' : null } |
+  { 'indexed' : null };
+export type MatchType = { 'exact' : null } |
+  { 'broad' : null } |
+  { 'phrase' : null };
+export type OwnershipStatus = { 'active' : null } |
+  { 'expired' : null } |
+  { 'reclaimed' : null };
+export interface Page {
+  'id' : bigint,
+  'url' : string,
+  'status' : PageStatus,
+  'websiteId' : bigint,
+  'addedAt' : bigint,
+}
+export type PageStatus = { 'pending' : null } |
+  { 'error' : null } |
+  { 'indexed' : null };
+export type Result = { 'ok' : AdvertiserWallet } |
+  { 'err' : string };
+export type Result_1 = { 'ok' : null } |
+  { 'err' : string };
+export type Result_2 = {
+    'ok' : { 'orderId' : string, 'amount' : bigint, 'keyId' : string }
+  } |
   { 'err' : string };
 export interface SecurityLog {
   'id' : bigint,
@@ -74,6 +127,19 @@ export interface Stats {
   'pending' : bigint,
   'approved' : bigint,
 }
+export interface Transaction {
+  'id' : bigint,
+  'createdAt' : bigint,
+  'type' : TransactionType,
+  'email' : string,
+  'amount' : bigint,
+  'reason' : TransactionReason,
+}
+export type TransactionReason = { 'topup' : null } |
+  { 'ad_click' : null } |
+  { 'refund' : null };
+export type TransactionType = { 'credit' : null } |
+  { 'debit' : null };
 export interface TransformationInput {
   'context' : Uint8Array,
   'response' : http_request_result,
@@ -87,44 +153,37 @@ export interface UserProfile { 'email' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
-export type IndexStatus = { 'notIndexed' : null } |
-  { 'pending' : null } |
-  { 'indexed' : null } |
-  { 'error' : null };
-export type OwnershipStatus = { 'active' : null } |
+export type VerificationStatus = { 'verified' : null } |
   { 'expired' : null } |
-  { 'reclaimed' : null };
-export type VerificationStatus = { 'pending' : null } |
-  { 'verified' : null } |
-  { 'expired' : null };
+  { 'pending' : null };
 export interface Website {
   'id' : bigint,
   'url' : string,
   'status' : WebsiteStatus,
+  'clicks' : bigint,
   'title' : string,
+  'indexStatus' : IndexStatus,
+  'spamScore' : bigint,
   'ownerId' : string,
   'ownerPrincipal' : [] | [Principal],
   'approvedAt' : [] | [bigint],
   'verificationToken' : string,
+  'lastVerifiedAt' : [] | [bigint],
+  'ownershipStatus' : OwnershipStatus,
+  'impressions' : bigint,
   'submittedAt' : bigint,
   'description' : string,
+  'verificationExpiryAt' : [] | [bigint],
   'isSeed' : boolean,
   'keywords' : Array<string>,
+  'seoScore' : bigint,
   'isVerified' : boolean,
-  'indexStatus' : [] | [IndexStatus],
-  'sitemapUrl' : [] | [string],
   'lastCheckedAt' : [] | [bigint],
   'lastCrawledAt' : [] | [bigint],
-  'ownershipStatus' : OwnershipStatus,
-  'verificationStatus' : VerificationStatus,
-  'lastVerifiedAt' : [] | [bigint],
-  'verificationExpiryAt' : [] | [bigint],
   'ownerHistory' : Array<string>,
+  'verificationStatus' : VerificationStatus,
   'adminBoost' : bigint,
-  'clicks' : bigint,
-  'impressions' : bigint,
-  'spamScore' : bigint,
-  'seoScore' : bigint,
+  'sitemapUrl' : [] | [string],
 }
 export type WebsiteStatus = { 'pending' : null } |
   { 'approved' : null } |
@@ -136,17 +195,22 @@ export interface http_request_result {
   'headers' : Array<http_header>,
 }
 export interface _SERVICE {
-  '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
+  '_initializeAccessControl' : ActorMethod<[], undefined>,
   'addAdvertiserBalance' : ActorMethod<[string, bigint], undefined>,
+  'addBalance' : ActorMethod<[string, bigint], Result>,
   'addToBlacklist' : ActorMethod<[string, string], undefined>,
+  'addToCrawlQueue' : ActorMethod<[bigint], undefined>,
   'applyForAdvertiser' : ActorMethod<[string], undefined>,
   'approveAdvertiser' : ActorMethod<[string], undefined>,
   'approveWebsite' : ActorMethod<[bigint], Website>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'checkAndQueueRecrawl' : ActorMethod<[], bigint>,
   'createCampaign' : ActorMethod<
     [string, string, bigint, bigint, bigint, Array<string>, string],
     Campaign
   >,
+  'createRazorpayOrder' : ActorMethod<[string, bigint], Result_2>,
+  'createWallet' : ActorMethod<[string], AdvertiserWallet>,
   'deleteWebsite' : ActorMethod<[bigint], undefined>,
   'editWebsite' : ActorMethod<[bigint, string, string, Array<string>], Website>,
   'getAdsEnabled' : ActorMethod<[], boolean>,
@@ -157,41 +221,57 @@ export interface _SERVICE {
   'getBlacklist' : ActorMethod<[], Array<BlacklistEntry>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getCrawlQueue' : ActorMethod<[], Array<[bigint, bigint]>>,
+  'getDiscoverFeed' : ActorMethod<[[] | [string]], DiscoverFeed>,
   'getFlaggedDomains' : ActorMethod<[], Array<BlacklistEntry>>,
   'getMyAdvertiserProfile' : ActorMethod<[string], [] | [AdvertiserProfile]>,
   'getMyCampaigns' : ActorMethod<[string], Array<Campaign>>,
   'getMyWebsites' : ActorMethod<[], Array<Website>>,
+  'getMyWebsitesByEmail' : ActorMethod<[string], Array<Website>>,
+  'getPagesForWebsite' : ActorMethod<[bigint], Array<Page>>,
   'getPendingWebsites' : ActorMethod<[], Array<Website>>,
   'getSecurityLogs' : ActorMethod<[], Array<SecurityLog>>,
   'getStats' : ActorMethod<[], Stats>,
+  'getTransactions' : ActorMethod<[string], Array<Transaction>>,
+  'getUserClickHistory' : ActorMethod<[string], Array<string>>,
+  'getUserInterests' : ActorMethod<[string], Array<string>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getUserSearchHistory' : ActorMethod<[string], Array<string>>,
   'getVerificationToken' : ActorMethod<[bigint], string>,
+  'getWallet' : ActorMethod<[string], [] | [AdvertiserWallet]>,
   'importSeedData' : ActorMethod<[Array<SeedEntry>], bigint>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'pauseCampaign' : ActorMethod<[bigint], undefined>,
-  'recordAdClick' : ActorMethod<[bigint, string], Result>,
+  'rankAds' : ActorMethod<[string], Array<AdMatchResult>>,
+  'recalculateAllSpamScores' : ActorMethod<[], bigint>,
+  'recalculateSpamScore' : ActorMethod<[bigint], bigint>,
+  'reclaimDomain' : ActorMethod<[bigint, string], Website>,
+  'recordAdClick' : ActorMethod<[bigint, string], Result_1>,
+  'recordAdClickV2' : ActorMethod<[bigint, string], Result_1>,
   'recordAdImpression' : ActorMethod<[bigint], undefined>,
-  'getUserSearchHistory' : ActorMethod<[string], Array<string>>,
-  'recordUserSearch' : ActorMethod<[string, string], undefined>,
-  'getUserClickHistory' : ActorMethod<[string], Array<string>>,
-  'refreshUserInterests' : ActorMethod<[string], undefined>,
-  'getUserInterests' : ActorMethod<[string], Array<string>>,
-  'recordUserClick' : ActorMethod<[string, string], undefined>,
+  'recordAdImpressionV2' : ActorMethod<[bigint], undefined>,
   'recordClick' : ActorMethod<[string], undefined>,
+  'recordImpression' : ActorMethod<[string], undefined>,
+  'recordUserClick' : ActorMethod<[string, string], undefined>,
+  'recordUserSearch' : ActorMethod<[string, string], undefined>,
+  'refreshUserInterests' : ActorMethod<[string], undefined>,
   'rejectAdvertiser' : ActorMethod<[string], undefined>,
   'rejectWebsite' : ActorMethod<[bigint], Website>,
   'removeFromBlacklist' : ActorMethod<[string], undefined>,
+  'requestIndexing' : ActorMethod<[bigint, string], Website>,
   'resumeCampaign' : ActorMethod<[bigint], undefined>,
   'reviewFlaggedDomain' : ActorMethod<
     [string, { 'remove' : null } | { 'approve' : null } | { 'block' : null }],
     undefined
   >,
+  'runCrawler' : ActorMethod<[], bigint>,
+  'runOwnershipCleanup' : ActorMethod<[], bigint>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'searchWebsites' : ActorMethod<[string, [] | [string]], Array<Website>>,
   'setAdminBoost' : ActorMethod<[bigint, bigint], Website>,
   'setAdsEnabled' : ActorMethod<[boolean], undefined>,
   'submitWebsite' : ActorMethod<
-    [string, string, string, Array<string>],
+    [string, string, string, string, Array<string>],
     Website
   >,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
@@ -199,9 +279,14 @@ export interface _SERVICE {
     [bigint, string, bigint, bigint, bigint, Array<string>, string],
     Campaign
   >,
+  'updateLastCrawledAt' : ActorMethod<[bigint], undefined>,
+  'updatePageStatus' : ActorMethod<[bigint, PageStatus], undefined>,
+  'updateSitemap' : ActorMethod<[bigint, string], Website>,
   'verifyDomain' : ActorMethod<[bigint], boolean>,
-  'recalculateSpamScore' : ActorMethod<[bigint], bigint>,
-  'recalculateAllSpamScores' : ActorMethod<[], bigint>,
+  'verifyRazorpayPayment' : ActorMethod<
+    [string, string, string, string, bigint],
+    Result
+  >,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

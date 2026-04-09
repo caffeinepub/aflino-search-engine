@@ -69,6 +69,7 @@ import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import {
   useAddAdvertiserBalance,
+  useAddBalance,
   useAddToBlacklist,
   useApproveAdvertiser,
   useApproveWebsite,
@@ -3175,6 +3176,7 @@ function MonetizationSection() {
   const approveMutation = useApproveAdvertiser();
   const rejectMutation = useRejectAdvertiser();
   const addBalanceMutation = useAddAdvertiserBalance();
+  const addWalletBalanceMutation = useAddBalance();
   const setAdsEnabledMutation = useSetAdsEnabled();
   const pauseCampaignMutation = usePauseCampaign();
   const resumeCampaignMutation = useResumeCampaign();
@@ -3263,6 +3265,11 @@ function MonetizationSection() {
     }
     try {
       await addBalanceMutation.mutateAsync({
+        email: balanceEmail.trim(),
+        amount,
+      });
+      // Also top up the wallet (new wallet system)
+      await addWalletBalanceMutation.mutateAsync({
         email: balanceEmail.trim(),
         amount,
       });
@@ -3580,16 +3587,19 @@ function MonetizationSection() {
           <Button
             size="sm"
             onClick={() => void handleAddBalance()}
-            disabled={addBalanceMutation.isPending}
+            disabled={
+              addBalanceMutation.isPending || addWalletBalanceMutation.isPending
+            }
             data-ocid="monetization.balance.submit_button"
           >
-            {addBalanceMutation.isPending ? (
+            {addBalanceMutation.isPending ||
+            addWalletBalanceMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                 Adding…
               </>
             ) : (
-              "Add Balance"
+              "Add Balance (Wallet)"
             )}
           </Button>
         </div>
