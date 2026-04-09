@@ -8,6 +8,20 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const AdSyncCurrency = IDL.Variant({
+  'EUR' : IDL.Null,
+  'INR' : IDL.Null,
+  'USD' : IDL.Null,
+});
+export const AdSyncWallet = IDL.Record({
+  'balance' : IDL.Nat,
+  'createdAt' : IDL.Int,
+  'totalEarned' : IDL.Nat,
+  'totalSpent' : IDL.Nat,
+  'currency' : AdSyncCurrency,
+  'syncId' : IDL.Text,
+});
+export const Result_1 = IDL.Variant({ 'ok' : AdSyncWallet, 'err' : IDL.Text });
 export const AdvertiserWallet = IDL.Record({
   'balance' : IDL.Nat,
   'createdAt' : IDL.Int,
@@ -18,6 +32,29 @@ export const Result = IDL.Variant({
   'ok' : AdvertiserWallet,
   'err' : IDL.Text,
 });
+export const AdSyncKycStatus = IDL.Variant({
+  'verified' : IDL.Null,
+  'pending' : IDL.Null,
+  'none' : IDL.Null,
+});
+export const AdSyncKycRecord = IDL.Record({
+  'status' : AdSyncKycStatus,
+  'submittedAt' : IDL.Opt(IDL.Int),
+  'lastUpdatedAt' : IDL.Int,
+  'adminNotes' : IDL.Text,
+  'verifiedAt' : IDL.Opt(IDL.Int),
+  'syncId' : IDL.Text,
+});
+export const Result_2 = IDL.Variant({
+  'ok' : AdSyncKycRecord,
+  'err' : IDL.Text,
+});
+export const AdSyncPayoutStatus = IDL.Variant({
+  'completed' : IDL.Null,
+  'processing' : IDL.Null,
+  'failed' : IDL.Null,
+});
+export const Result_3 = IDL.Variant({ 'ok' : IDL.Text, 'err' : IDL.Text });
 export const WebsiteStatus = IDL.Variant({
   'pending' : IDL.Null,
   'approved' : IDL.Null,
@@ -73,6 +110,14 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const Result_8 = IDL.Variant({
+  'ok' : IDL.Record({
+    'orderId' : IDL.Text,
+    'amount' : IDL.Nat,
+    'keyId' : IDL.Text,
+  }),
+  'err' : IDL.Text,
+});
 export const CampaignStatus = IDL.Variant({
   'active' : IDL.Null,
   'ended' : IDL.Null,
@@ -93,13 +138,95 @@ export const Campaign = IDL.Record({
   'destinationUrl' : IDL.Text,
   'budget' : IDL.Nat,
 });
-export const Result_2 = IDL.Variant({
-  'ok' : IDL.Record({
-    'orderId' : IDL.Text,
-    'amount' : IDL.Nat,
-    'keyId' : IDL.Text,
-  }),
+export const AdSyncInvoice = IDL.Record({
+  'id' : IDL.Nat,
+  'finalAmount' : IDL.Nat,
+  'createdAt' : IDL.Int,
+  'reference' : IDL.Text,
+  'invoiceType' : IDL.Variant({ 'earning' : IDL.Null, 'payout' : IDL.Null }),
+  'taxAmount' : IDL.Nat,
+  'amount' : IDL.Nat,
+  'syncId' : IDL.Text,
+});
+export const AdSyncPaymentMethod = IDL.Variant({
+  'upi' : IDL.Null,
+  'bank' : IDL.Null,
+  'swift' : IDL.Null,
+});
+export const AdSyncPaymentDetails = IDL.Record({
+  'method' : AdSyncPaymentMethod,
+  'country' : IDL.Text,
+  'swiftCode' : IDL.Opt(IDL.Text),
+  'iban' : IDL.Opt(IDL.Text),
+  'ifsc' : IDL.Opt(IDL.Text),
+  'accountName' : IDL.Text,
+  'upiId' : IDL.Opt(IDL.Text),
+  'accountNumber' : IDL.Opt(IDL.Text),
+  'syncId' : IDL.Text,
+});
+export const AdSyncPayoutLog = IDL.Record({
+  'id' : IDL.Nat,
+  'status' : AdSyncPayoutStatus,
+  'completedAt' : IDL.Opt(IDL.Int),
+  'paymentMethod' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'amount' : IDL.Nat,
+  'syncId' : IDL.Text,
+});
+export const AdSyncTaxProfile = IDL.Record({
+  'country' : IDL.Text,
+  'gstNumber' : IDL.Text,
+  'lastUpdatedAt' : IDL.Int,
+  'panNumber' : IDL.Text,
+  'taxRate' : IDL.Nat,
+  'syncId' : IDL.Text,
+});
+export const Result_7 = IDL.Variant({
+  'ok' : AdSyncTaxProfile,
   'err' : IDL.Text,
+});
+export const AdSyncTransactionType = IDL.Variant({
+  'credit' : IDL.Null,
+  'debit' : IDL.Null,
+});
+export const AdSyncTransactionReason = IDL.Variant({
+  'topup' : IDL.Null,
+  'earning' : IDL.Null,
+  'ad_click' : IDL.Null,
+  'payout' : IDL.Null,
+  'refund' : IDL.Null,
+});
+export const AdSyncTransaction = IDL.Record({
+  'id' : IDL.Nat,
+  'transactionType' : AdSyncTransactionType,
+  'createdAt' : IDL.Int,
+  'amount' : IDL.Nat,
+  'syncId' : IDL.Text,
+  'reason' : AdSyncTransactionReason,
+});
+export const AdSyncRole = IDL.Variant({
+  'both' : IDL.Null,
+  'publisher' : IDL.Null,
+  'advertiser' : IDL.Null,
+});
+export const AdSyncAccountType = IDL.Variant({
+  'business' : IDL.Null,
+  'individual' : IDL.Null,
+});
+export const AdSyncUser = IDL.Record({
+  'country' : IDL.Text,
+  'city' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'role' : AdSyncRole,
+  'fullName' : IDL.Text,
+  'email' : IDL.Text,
+  'kycStatus' : AdSyncKycStatus,
+  'state' : IDL.Text,
+  'accountType' : AdSyncAccountType,
+  'address' : IDL.Text,
+  'passwordHash' : IDL.Text,
+  'mobile' : IDL.Text,
+  'syncId' : IDL.Text,
 });
 export const AdResult = IDL.Record({
   'name' : IDL.Text,
@@ -185,6 +312,7 @@ export const SeedEntry = IDL.Record({
   'description' : IDL.Text,
   'keywords' : IDL.Vec(IDL.Text),
 });
+export const Result_5 = IDL.Variant({ 'ok' : AdSyncUser, 'err' : IDL.Text });
 export const MatchType = IDL.Variant({
   'exact' : IDL.Null,
   'broad' : IDL.Null,
@@ -208,7 +336,11 @@ export const AdMatchResult = IDL.Record({
   'ad' : Ad,
   'keywordScore' : IDL.Nat,
 });
-export const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+export const Result_6 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+export const Result_4 = IDL.Variant({
+  'ok' : AdSyncPaymentDetails,
+  'err' : IDL.Text,
+});
 export const http_header = IDL.Record({
   'value' : IDL.Text,
   'name' : IDL.Text,
@@ -230,15 +362,27 @@ export const TransformationOutput = IDL.Record({
 
 export const idlService = IDL.Service({
   '_initializeAccessControl' : IDL.Func([], [], []),
+  'addAdSyncBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result_1], []),
   'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'addBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result], []),
   'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'addToCrawlQueue' : IDL.Func([IDL.Nat], [], []),
+  'adminUpdateAdSyncKycStatus' : IDL.Func(
+      [IDL.Text, AdSyncKycStatus, IDL.Text],
+      [Result_2],
+      [],
+    ),
+  'adminUpdatePayoutStatus' : IDL.Func(
+      [IDL.Nat, AdSyncPayoutStatus],
+      [Result_3],
+      [],
+    ),
   'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
   'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
   'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'checkAndQueueRecrawl' : IDL.Func([], [IDL.Nat], []),
+  'createAdSyncRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_8], []),
   'createCampaign' : IDL.Func(
       [
         IDL.Text,
@@ -252,14 +396,53 @@ export const idlService = IDL.Service({
       [Campaign],
       [],
     ),
-  'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_2], []),
+  'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_8], []),
   'createWallet' : IDL.Func([IDL.Text], [AdvertiserWallet], []),
+  'deductOnAdClick' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+      [Result_3],
+      [],
+    ),
   'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
   'editWebsite' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
       [Website],
       [],
     ),
+  'getAdSyncInvoices' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(AdSyncInvoice)],
+      ['query'],
+    ),
+  'getAdSyncKycRecord' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(AdSyncKycRecord)],
+      ['query'],
+    ),
+  'getAdSyncPaymentDetails' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(AdSyncPaymentDetails)],
+      ['query'],
+    ),
+  'getAdSyncPayoutLogs' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(AdSyncPayoutLog)],
+      ['query'],
+    ),
+  'getAdSyncRevenueShare' : IDL.Func([], [IDL.Nat], ['query']),
+  'getAdSyncTaxProfile' : IDL.Func([IDL.Text], [Result_7], ['query']),
+  'getAdSyncTransactions' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(AdSyncTransaction)],
+      ['query'],
+    ),
+  'getAdSyncUser' : IDL.Func([IDL.Text], [IDL.Opt(AdSyncUser)], ['query']),
+  'getAdSyncUserBySyncId' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(AdSyncUser)],
+      ['query'],
+    ),
+  'getAdSyncWallet' : IDL.Func([IDL.Text], [IDL.Opt(AdSyncWallet)], ['query']),
   'getAdsEnabled' : IDL.Func([], [IDL.Bool], ['query']),
   'getAdsForSearch' : IDL.Func([IDL.Text], [IDL.Vec(AdResult)], []),
   'getAllAdvertiserApplications' : IDL.Func(
@@ -304,13 +487,15 @@ export const idlService = IDL.Service({
   'getWallet' : IDL.Func([IDL.Text], [IDL.Opt(AdvertiserWallet)], ['query']),
   'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'loginAdSyncUser' : IDL.Func([IDL.Text, IDL.Text], [Result_5], []),
   'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
+  'processPayouts' : IDL.Func([], [IDL.Vec(AdSyncPayoutLog)], []),
   'rankAds' : IDL.Func([IDL.Text], [IDL.Vec(AdMatchResult)], ['query']),
   'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
   'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
   'reclaimDomain' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
-  'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
-  'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+  'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_6], []),
+  'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_6], []),
   'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
   'recordAdImpressionV2' : IDL.Func([IDL.Nat], [], []),
   'recordClick' : IDL.Func([IDL.Text], [], []),
@@ -318,6 +503,22 @@ export const idlService = IDL.Service({
   'recordUserClick' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'refreshUserInterests' : IDL.Func([IDL.Text], [], []),
+  'registerAdSyncUser' : IDL.Func(
+      [
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        AdSyncAccountType,
+        AdSyncRole,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+      ],
+      [Result_5],
+      [],
+    ),
   'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
   'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
   'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
@@ -343,8 +544,30 @@ export const idlService = IDL.Service({
       [IDL.Vec(Website)],
       ['query'],
     ),
+  'setAdSyncPaymentDetails' : IDL.Func(
+      [
+        IDL.Text,
+        IDL.Text,
+        AdSyncPaymentMethod,
+        IDL.Opt(IDL.Text),
+        IDL.Opt(IDL.Text),
+        IDL.Opt(IDL.Text),
+        IDL.Opt(IDL.Text),
+        IDL.Opt(IDL.Text),
+        IDL.Text,
+      ],
+      [Result_4],
+      [],
+    ),
+  'setAdSyncRevenueShare' : IDL.Func([IDL.Nat], [Result_3], []),
+  'setAdSyncTaxProfile' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [Result_3],
+      [],
+    ),
   'setAdminBoost' : IDL.Func([IDL.Nat, IDL.Nat], [Website], []),
   'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
+  'submitAdSyncKyc' : IDL.Func([IDL.Text], [Result_2], []),
   'submitWebsite' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
       [Website],
@@ -371,6 +594,11 @@ export const idlService = IDL.Service({
   'updateLastCrawledAt' : IDL.Func([IDL.Nat], [], []),
   'updatePageStatus' : IDL.Func([IDL.Nat, PageStatus], [], []),
   'updateSitemap' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
+  'verifyAdSyncRazorpayPayment' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [Result_1],
+      [],
+    ),
   'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'verifyRazorpayPayment' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
@@ -382,6 +610,20 @@ export const idlService = IDL.Service({
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const AdSyncCurrency = IDL.Variant({
+    'EUR' : IDL.Null,
+    'INR' : IDL.Null,
+    'USD' : IDL.Null,
+  });
+  const AdSyncWallet = IDL.Record({
+    'balance' : IDL.Nat,
+    'createdAt' : IDL.Int,
+    'totalEarned' : IDL.Nat,
+    'totalSpent' : IDL.Nat,
+    'currency' : AdSyncCurrency,
+    'syncId' : IDL.Text,
+  });
+  const Result_1 = IDL.Variant({ 'ok' : AdSyncWallet, 'err' : IDL.Text });
   const AdvertiserWallet = IDL.Record({
     'balance' : IDL.Nat,
     'createdAt' : IDL.Int,
@@ -389,6 +631,26 @@ export const idlFactory = ({ IDL }) => {
     'totalSpent' : IDL.Nat,
   });
   const Result = IDL.Variant({ 'ok' : AdvertiserWallet, 'err' : IDL.Text });
+  const AdSyncKycStatus = IDL.Variant({
+    'verified' : IDL.Null,
+    'pending' : IDL.Null,
+    'none' : IDL.Null,
+  });
+  const AdSyncKycRecord = IDL.Record({
+    'status' : AdSyncKycStatus,
+    'submittedAt' : IDL.Opt(IDL.Int),
+    'lastUpdatedAt' : IDL.Int,
+    'adminNotes' : IDL.Text,
+    'verifiedAt' : IDL.Opt(IDL.Int),
+    'syncId' : IDL.Text,
+  });
+  const Result_2 = IDL.Variant({ 'ok' : AdSyncKycRecord, 'err' : IDL.Text });
+  const AdSyncPayoutStatus = IDL.Variant({
+    'completed' : IDL.Null,
+    'processing' : IDL.Null,
+    'failed' : IDL.Null,
+  });
+  const Result_3 = IDL.Variant({ 'ok' : IDL.Text, 'err' : IDL.Text });
   const WebsiteStatus = IDL.Variant({
     'pending' : IDL.Null,
     'approved' : IDL.Null,
@@ -444,6 +706,14 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const Result_8 = IDL.Variant({
+    'ok' : IDL.Record({
+      'orderId' : IDL.Text,
+      'amount' : IDL.Nat,
+      'keyId' : IDL.Text,
+    }),
+    'err' : IDL.Text,
+  });
   const CampaignStatus = IDL.Variant({
     'active' : IDL.Null,
     'ended' : IDL.Null,
@@ -464,13 +734,92 @@ export const idlFactory = ({ IDL }) => {
     'destinationUrl' : IDL.Text,
     'budget' : IDL.Nat,
   });
-  const Result_2 = IDL.Variant({
-    'ok' : IDL.Record({
-      'orderId' : IDL.Text,
-      'amount' : IDL.Nat,
-      'keyId' : IDL.Text,
-    }),
-    'err' : IDL.Text,
+  const AdSyncInvoice = IDL.Record({
+    'id' : IDL.Nat,
+    'finalAmount' : IDL.Nat,
+    'createdAt' : IDL.Int,
+    'reference' : IDL.Text,
+    'invoiceType' : IDL.Variant({ 'earning' : IDL.Null, 'payout' : IDL.Null }),
+    'taxAmount' : IDL.Nat,
+    'amount' : IDL.Nat,
+    'syncId' : IDL.Text,
+  });
+  const AdSyncPaymentMethod = IDL.Variant({
+    'upi' : IDL.Null,
+    'bank' : IDL.Null,
+    'swift' : IDL.Null,
+  });
+  const AdSyncPaymentDetails = IDL.Record({
+    'method' : AdSyncPaymentMethod,
+    'country' : IDL.Text,
+    'swiftCode' : IDL.Opt(IDL.Text),
+    'iban' : IDL.Opt(IDL.Text),
+    'ifsc' : IDL.Opt(IDL.Text),
+    'accountName' : IDL.Text,
+    'upiId' : IDL.Opt(IDL.Text),
+    'accountNumber' : IDL.Opt(IDL.Text),
+    'syncId' : IDL.Text,
+  });
+  const AdSyncPayoutLog = IDL.Record({
+    'id' : IDL.Nat,
+    'status' : AdSyncPayoutStatus,
+    'completedAt' : IDL.Opt(IDL.Int),
+    'paymentMethod' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'amount' : IDL.Nat,
+    'syncId' : IDL.Text,
+  });
+  const AdSyncTaxProfile = IDL.Record({
+    'country' : IDL.Text,
+    'gstNumber' : IDL.Text,
+    'lastUpdatedAt' : IDL.Int,
+    'panNumber' : IDL.Text,
+    'taxRate' : IDL.Nat,
+    'syncId' : IDL.Text,
+  });
+  const Result_7 = IDL.Variant({ 'ok' : AdSyncTaxProfile, 'err' : IDL.Text });
+  const AdSyncTransactionType = IDL.Variant({
+    'credit' : IDL.Null,
+    'debit' : IDL.Null,
+  });
+  const AdSyncTransactionReason = IDL.Variant({
+    'topup' : IDL.Null,
+    'earning' : IDL.Null,
+    'ad_click' : IDL.Null,
+    'payout' : IDL.Null,
+    'refund' : IDL.Null,
+  });
+  const AdSyncTransaction = IDL.Record({
+    'id' : IDL.Nat,
+    'transactionType' : AdSyncTransactionType,
+    'createdAt' : IDL.Int,
+    'amount' : IDL.Nat,
+    'syncId' : IDL.Text,
+    'reason' : AdSyncTransactionReason,
+  });
+  const AdSyncRole = IDL.Variant({
+    'both' : IDL.Null,
+    'publisher' : IDL.Null,
+    'advertiser' : IDL.Null,
+  });
+  const AdSyncAccountType = IDL.Variant({
+    'business' : IDL.Null,
+    'individual' : IDL.Null,
+  });
+  const AdSyncUser = IDL.Record({
+    'country' : IDL.Text,
+    'city' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'role' : AdSyncRole,
+    'fullName' : IDL.Text,
+    'email' : IDL.Text,
+    'kycStatus' : AdSyncKycStatus,
+    'state' : IDL.Text,
+    'accountType' : AdSyncAccountType,
+    'address' : IDL.Text,
+    'passwordHash' : IDL.Text,
+    'mobile' : IDL.Text,
+    'syncId' : IDL.Text,
   });
   const AdResult = IDL.Record({
     'name' : IDL.Text,
@@ -556,6 +905,7 @@ export const idlFactory = ({ IDL }) => {
     'description' : IDL.Text,
     'keywords' : IDL.Vec(IDL.Text),
   });
+  const Result_5 = IDL.Variant({ 'ok' : AdSyncUser, 'err' : IDL.Text });
   const MatchType = IDL.Variant({
     'exact' : IDL.Null,
     'broad' : IDL.Null,
@@ -576,7 +926,11 @@ export const idlFactory = ({ IDL }) => {
     'negativeKeywords' : IDL.Vec(IDL.Text),
   });
   const AdMatchResult = IDL.Record({ 'ad' : Ad, 'keywordScore' : IDL.Nat });
-  const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const Result_6 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const Result_4 = IDL.Variant({
+    'ok' : AdSyncPaymentDetails,
+    'err' : IDL.Text,
+  });
   const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const http_request_result = IDL.Record({
     'status' : IDL.Nat,
@@ -595,15 +949,27 @@ export const idlFactory = ({ IDL }) => {
   
   return IDL.Service({
     '_initializeAccessControl' : IDL.Func([], [], []),
+    'addAdSyncBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result_1], []),
     'addAdvertiserBalance' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'addBalance' : IDL.Func([IDL.Text, IDL.Nat], [Result], []),
     'addToBlacklist' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'addToCrawlQueue' : IDL.Func([IDL.Nat], [], []),
+    'adminUpdateAdSyncKycStatus' : IDL.Func(
+        [IDL.Text, AdSyncKycStatus, IDL.Text],
+        [Result_2],
+        [],
+      ),
+    'adminUpdatePayoutStatus' : IDL.Func(
+        [IDL.Nat, AdSyncPayoutStatus],
+        [Result_3],
+        [],
+      ),
     'applyForAdvertiser' : IDL.Func([IDL.Text], [], []),
     'approveAdvertiser' : IDL.Func([IDL.Text], [], []),
     'approveWebsite' : IDL.Func([IDL.Nat], [Website], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'checkAndQueueRecrawl' : IDL.Func([], [IDL.Nat], []),
+    'createAdSyncRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_8], []),
     'createCampaign' : IDL.Func(
         [
           IDL.Text,
@@ -617,13 +983,56 @@ export const idlFactory = ({ IDL }) => {
         [Campaign],
         [],
       ),
-    'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_2], []),
+    'createRazorpayOrder' : IDL.Func([IDL.Text, IDL.Nat], [Result_8], []),
     'createWallet' : IDL.Func([IDL.Text], [AdvertiserWallet], []),
+    'deductOnAdClick' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+        [Result_3],
+        [],
+      ),
     'deleteWebsite' : IDL.Func([IDL.Nat], [], []),
     'editWebsite' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
         [Website],
         [],
+      ),
+    'getAdSyncInvoices' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(AdSyncInvoice)],
+        ['query'],
+      ),
+    'getAdSyncKycRecord' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(AdSyncKycRecord)],
+        ['query'],
+      ),
+    'getAdSyncPaymentDetails' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(AdSyncPaymentDetails)],
+        ['query'],
+      ),
+    'getAdSyncPayoutLogs' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(AdSyncPayoutLog)],
+        ['query'],
+      ),
+    'getAdSyncRevenueShare' : IDL.Func([], [IDL.Nat], ['query']),
+    'getAdSyncTaxProfile' : IDL.Func([IDL.Text], [Result_7], ['query']),
+    'getAdSyncTransactions' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(AdSyncTransaction)],
+        ['query'],
+      ),
+    'getAdSyncUser' : IDL.Func([IDL.Text], [IDL.Opt(AdSyncUser)], ['query']),
+    'getAdSyncUserBySyncId' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(AdSyncUser)],
+        ['query'],
+      ),
+    'getAdSyncWallet' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(AdSyncWallet)],
+        ['query'],
       ),
     'getAdsEnabled' : IDL.Func([], [IDL.Bool], ['query']),
     'getAdsForSearch' : IDL.Func([IDL.Text], [IDL.Vec(AdResult)], []),
@@ -685,13 +1094,15 @@ export const idlFactory = ({ IDL }) => {
     'getWallet' : IDL.Func([IDL.Text], [IDL.Opt(AdvertiserWallet)], ['query']),
     'importSeedData' : IDL.Func([IDL.Vec(SeedEntry)], [IDL.Nat], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'loginAdSyncUser' : IDL.Func([IDL.Text, IDL.Text], [Result_5], []),
     'pauseCampaign' : IDL.Func([IDL.Nat], [], []),
+    'processPayouts' : IDL.Func([], [IDL.Vec(AdSyncPayoutLog)], []),
     'rankAds' : IDL.Func([IDL.Text], [IDL.Vec(AdMatchResult)], ['query']),
     'recalculateAllSpamScores' : IDL.Func([], [IDL.Nat], []),
     'recalculateSpamScore' : IDL.Func([IDL.Nat], [IDL.Nat], []),
     'reclaimDomain' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
-    'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
-    'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+    'recordAdClick' : IDL.Func([IDL.Nat, IDL.Text], [Result_6], []),
+    'recordAdClickV2' : IDL.Func([IDL.Nat, IDL.Text], [Result_6], []),
     'recordAdImpression' : IDL.Func([IDL.Nat], [], []),
     'recordAdImpressionV2' : IDL.Func([IDL.Nat], [], []),
     'recordClick' : IDL.Func([IDL.Text], [], []),
@@ -699,6 +1110,22 @@ export const idlFactory = ({ IDL }) => {
     'recordUserClick' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'recordUserSearch' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'refreshUserInterests' : IDL.Func([IDL.Text], [], []),
+    'registerAdSyncUser' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          AdSyncAccountType,
+          AdSyncRole,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+        ],
+        [Result_5],
+        [],
+      ),
     'rejectAdvertiser' : IDL.Func([IDL.Text], [], []),
     'rejectWebsite' : IDL.Func([IDL.Nat], [Website], []),
     'removeFromBlacklist' : IDL.Func([IDL.Text], [], []),
@@ -724,8 +1151,30 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(Website)],
         ['query'],
       ),
+    'setAdSyncPaymentDetails' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Text,
+          AdSyncPaymentMethod,
+          IDL.Opt(IDL.Text),
+          IDL.Opt(IDL.Text),
+          IDL.Opt(IDL.Text),
+          IDL.Opt(IDL.Text),
+          IDL.Opt(IDL.Text),
+          IDL.Text,
+        ],
+        [Result_4],
+        [],
+      ),
+    'setAdSyncRevenueShare' : IDL.Func([IDL.Nat], [Result_3], []),
+    'setAdSyncTaxProfile' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [Result_3],
+        [],
+      ),
     'setAdminBoost' : IDL.Func([IDL.Nat, IDL.Nat], [Website], []),
     'setAdsEnabled' : IDL.Func([IDL.Bool], [], []),
+    'submitAdSyncKyc' : IDL.Func([IDL.Text], [Result_2], []),
     'submitWebsite' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Vec(IDL.Text)],
         [Website],
@@ -752,6 +1201,11 @@ export const idlFactory = ({ IDL }) => {
     'updateLastCrawledAt' : IDL.Func([IDL.Nat], [], []),
     'updatePageStatus' : IDL.Func([IDL.Nat, PageStatus], [], []),
     'updateSitemap' : IDL.Func([IDL.Nat, IDL.Text], [Website], []),
+    'verifyAdSyncRazorpayPayment' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [Result_1],
+        [],
+      ),
     'verifyDomain' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'verifyRazorpayPayment' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],

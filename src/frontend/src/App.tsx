@@ -8,6 +8,9 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import AdSyncDashboardPage from "./pages/AdSyncDashboardPage";
+import AdSyncLoginPage from "./pages/AdSyncLoginPage";
+import AdSyncRegisterPage from "./pages/AdSyncRegisterPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
 import AdsDashboardPage from "./pages/AdsDashboardPage";
@@ -112,6 +115,10 @@ function isUserAuthenticated(): boolean {
   return false;
 }
 
+function isAdSyncAuthenticated(): boolean {
+  return !!localStorage.getItem("aflino_adsync_syncId");
+}
+
 // ── Routes ────────────────────────────────────────────────────
 
 const rootRoute = createRootRoute({
@@ -200,6 +207,29 @@ const adsDashboardRoute = createRoute({
   component: AdsDashboardPage,
 });
 
+const adSyncRegisterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/adsync-register",
+  component: AdSyncRegisterPage,
+});
+
+const adSyncLoginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/adsync-login",
+  component: AdSyncLoginPage,
+});
+
+const adSyncDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/adsync-dashboard",
+  beforeLoad: () => {
+    if (!isAdSyncAuthenticated()) {
+      throw redirect({ to: "/adsync-register" });
+    }
+  },
+  component: AdSyncDashboardPage,
+});
+
 const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "*",
@@ -219,6 +249,9 @@ const routeTree = rootRoute.addChildren([
   adminRoute,
   submitRoute,
   adsDashboardRoute,
+  adSyncRegisterRoute,
+  adSyncLoginRoute,
+  adSyncDashboardRoute,
   notFoundRoute,
 ]);
 

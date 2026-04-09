@@ -110,7 +110,7 @@ type SecurityLog =
    principalText: text;
    timestamp: int;
  };
-type Result_2 = 
+type Result_8 = 
  variant {
    err: text;
    ok: record {
@@ -119,10 +119,40 @@ type Result_2 =
          orderId: text;
        };
  };
-type Result_1 = 
+type Result_7 = 
+ variant {
+   err: text;
+   ok: AdSyncTaxProfile;
+ };
+type Result_6 = 
  variant {
    err: text;
    ok;
+ };
+type Result_5 = 
+ variant {
+   err: text;
+   ok: AdSyncUser;
+ };
+type Result_4 = 
+ variant {
+   err: text;
+   ok: AdSyncPaymentDetails;
+ };
+type Result_3 = 
+ variant {
+   err: text;
+   ok: text;
+ };
+type Result_2 = 
+ variant {
+   err: text;
+   ok: AdSyncKycRecord;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok: AdSyncWallet;
  };
 type Result = 
  variant {
@@ -225,6 +255,142 @@ type AdvertiserProfile =
    reviewedAt: opt int;
    status: AdvertiserStatus;
  };
+type AdSyncWallet = 
+ record {
+   balance: nat;
+   createdAt: int;
+   currency: AdSyncCurrency;
+   syncId: text;
+   totalEarned: nat;
+   totalSpent: nat;
+ };
+type AdSyncUser = 
+ record {
+   accountType: AdSyncAccountType;
+   address: text;
+   city: text;
+   country: text;
+   createdAt: int;
+   email: text;
+   fullName: text;
+   kycStatus: AdSyncKycStatus;
+   mobile: text;
+   passwordHash: text;
+   role: AdSyncRole;
+   state: text;
+   syncId: text;
+ };
+type AdSyncTransactionType = 
+ variant {
+   credit;
+   debit;
+ };
+type AdSyncTransactionReason = 
+ variant {
+   ad_click;
+   earning;
+   payout;
+   refund;
+   topup;
+ };
+type AdSyncTransaction = 
+ record {
+   amount: nat;
+   createdAt: int;
+   id: nat;
+   reason: AdSyncTransactionReason;
+   syncId: text;
+   transactionType: AdSyncTransactionType;
+ };
+type AdSyncTaxProfile = 
+ record {
+   country: text;
+   gstNumber: text;
+   lastUpdatedAt: int;
+   panNumber: text;
+   syncId: text;
+   taxRate: nat;
+ };
+type AdSyncRole = 
+ variant {
+   advertiser;
+   both;
+   publisher;
+ };
+type AdSyncPayoutStatus = 
+ variant {
+   completed;
+   failed;
+   processing;
+ };
+type AdSyncPayoutLog = 
+ record {
+   amount: nat;
+   completedAt: opt int;
+   createdAt: int;
+   id: nat;
+   paymentMethod: text;
+   status: AdSyncPayoutStatus;
+   syncId: text;
+ };
+type AdSyncPaymentMethod = 
+ variant {
+   bank;
+   swift;
+   upi;
+ };
+type AdSyncPaymentDetails = 
+ record {
+   accountName: text;
+   accountNumber: opt text;
+   country: text;
+   iban: opt text;
+   ifsc: opt text;
+   method: AdSyncPaymentMethod;
+   swiftCode: opt text;
+   syncId: text;
+   upiId: opt text;
+ };
+type AdSyncKycStatus = 
+ variant {
+   none;
+   pending;
+   verified;
+ };
+type AdSyncKycRecord = 
+ record {
+   adminNotes: text;
+   lastUpdatedAt: int;
+   status: AdSyncKycStatus;
+   submittedAt: opt int;
+   syncId: text;
+   verifiedAt: opt int;
+ };
+type AdSyncInvoice = 
+ record {
+   amount: nat;
+   createdAt: int;
+   finalAmount: nat;
+   id: nat;
+   invoiceType: variant {
+                  earning;
+                  payout;
+                };
+   reference: text;
+   syncId: text;
+   taxAmount: nat;
+ };
+type AdSyncCurrency = 
+ variant {
+   EUR;
+   INR;
+   USD;
+ };
+type AdSyncAccountType = 
+ variant {
+   business;
+   individual;
+ };
 type AdResult = 
  record {
    bidAmount: nat;
@@ -255,23 +421,41 @@ type Ad =
  };
 service : {
   _initializeAccessControl: () -> ();
+  addAdSyncBalance: (syncId: text, amount: nat) -> (Result_1);
   addAdvertiserBalance: (email: text, amount: nat) -> ();
   addBalance: (email: text, amount: nat) -> (Result);
   addToBlacklist: (domain: text, reason: text) -> ();
   addToCrawlQueue: (websiteId: nat) -> ();
+  adminUpdateAdSyncKycStatus: (syncId: text, status: AdSyncKycStatus,
+   adminNotes: text) -> (Result_2);
+  adminUpdatePayoutStatus: (payoutId: nat, status: AdSyncPayoutStatus) ->
+   (Result_3);
   applyForAdvertiser: (email: text) -> ();
   approveAdvertiser: (email: text) -> ();
   approveWebsite: (websiteId: nat) -> (Website);
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
   checkAndQueueRecrawl: () -> (nat);
+  createAdSyncRazorpayOrder: (syncId: text, amount: nat) -> (Result_8);
   createCampaign: (email: text, name: text, budget: nat, dailyBudget: 
    nat, bidAmount: nat, keywords: vec text, destinationUrl: text) ->
    (Campaign);
-  createRazorpayOrder: (email: text, amount: nat) -> (Result_2);
+  createRazorpayOrder: (email: text, amount: nat) -> (Result_8);
   createWallet: (email: text) -> (AdvertiserWallet);
+  deductOnAdClick: (advertiserSyncId: text, publisherSyncId: text, bidAmount:
+   nat, ipAddress: text) -> (Result_3);
   deleteWebsite: (websiteId: nat) -> ();
   editWebsite: (websiteId: nat, title: text, description: text, keywords:
    vec text) -> (Website);
+  getAdSyncInvoices: (syncId: text) -> (vec AdSyncInvoice) query;
+  getAdSyncKycRecord: (syncId: text) -> (opt AdSyncKycRecord) query;
+  getAdSyncPaymentDetails: (syncId: text) -> (opt AdSyncPaymentDetails) query;
+  getAdSyncPayoutLogs: (syncId: text) -> (vec AdSyncPayoutLog) query;
+  getAdSyncRevenueShare: () -> (nat) query;
+  getAdSyncTaxProfile: (syncId: text) -> (Result_7) query;
+  getAdSyncTransactions: (syncId: text) -> (vec AdSyncTransaction) query;
+  getAdSyncUser: (email: text) -> (opt AdSyncUser) query;
+  getAdSyncUserBySyncId: (syncId: text) -> (opt AdSyncUser) query;
+  getAdSyncWallet: (syncId: text) -> (opt AdSyncWallet) query;
   getAdsEnabled: () -> (bool) query;
   getAdsForSearch: (searchQuery: text) -> (vec AdResult);
   getAllAdvertiserApplications: () -> (vec AdvertiserProfile) query;
@@ -303,13 +487,15 @@ service : {
   getWallet: (email: text) -> (opt AdvertiserWallet) query;
   importSeedData: (entries: vec SeedEntry) -> (nat);
   isCallerAdmin: () -> (bool) query;
+  loginAdSyncUser: (email: text, passwordHash: text) -> (Result_5);
   pauseCampaign: (campaignId: nat) -> ();
+  processPayouts: () -> (vec AdSyncPayoutLog);
   rankAds: (searchQuery: text) -> (vec AdMatchResult) query;
   recalculateAllSpamScores: () -> (nat);
   recalculateSpamScore: (websiteId: nat) -> (nat);
   reclaimDomain: (websiteId: nat, newOwnerEmail: text) -> (Website);
-  recordAdClick: (campaignId: nat, userSession: text) -> (Result_1);
-  recordAdClickV2: (adId: nat, userSession: text) -> (Result_1);
+  recordAdClick: (campaignId: nat, userSession: text) -> (Result_6);
+  recordAdClickV2: (adId: nat, userSession: text) -> (Result_6);
   recordAdImpression: (campaignId: nat) -> ();
   recordAdImpressionV2: (adId: nat) -> ();
   recordClick: (url: text) -> ();
@@ -317,6 +503,9 @@ service : {
   recordUserClick: (email: text, url: text) -> ();
   recordUserSearch: (email: text, searchQuery: text) -> ();
   refreshUserInterests: (email: text) -> ();
+  registerAdSyncUser: (email: text, fullName: text, mobile: text,
+   passwordHash: text, accountType: AdSyncAccountType, role: AdSyncRole,
+   country: text, state: text, city: text, address: text) -> (Result_5);
   rejectAdvertiser: (email: text) -> ();
   rejectWebsite: (websiteId: nat) -> (Website);
   removeFromBlacklist: (domain: text) -> ();
@@ -333,8 +522,16 @@ service : {
   saveCallerUserProfile: (profile: UserProfile) -> ();
   searchWebsites: (searchQuery: text, emailOpt: opt text) ->
    (vec Website) query;
+  setAdSyncPaymentDetails: (syncId: text, country: text, method:
+   AdSyncPaymentMethod, upiId: opt text, accountNumber: opt text, ifsc:
+   opt text, swiftCode: opt text, iban: opt text, accountName: text) ->
+   (Result_4);
+  setAdSyncRevenueShare: (share: nat) -> (Result_3);
+  setAdSyncTaxProfile: (syncId: text, country: text, panNumber: text,
+   gstNumber: text, taxRate: nat) -> (Result_3);
   setAdminBoost: (websiteId: nat, boost: nat) -> (Website);
   setAdsEnabled: (enabled: bool) -> ();
+  submitAdSyncKyc: (syncId: text) -> (Result_2);
   submitWebsite: (ownerId: text, url: text, title: text, description: 
    text, keywords: vec text) -> (Website);
   transform: (input: TransformationInput) -> (TransformationOutput) query;
@@ -344,6 +541,9 @@ service : {
   updateLastCrawledAt: (websiteId: nat) -> ();
   updatePageStatus: (pageId: nat, status: PageStatus) -> ();
   updateSitemap: (websiteId: nat, sitemapUrl: text) -> (Website);
+  verifyAdSyncRazorpayPayment: (syncId: text, razorpayOrderId: text,
+   razorpayPaymentId: text, razorpaySignature: text, amount: nat) ->
+   (Result_1);
   verifyDomain: (websiteId: nat) -> (bool);
   verifyRazorpayPayment: (email: text, orderId: text, paymentId: text,
    signature: text, amount: nat) -> (Result);

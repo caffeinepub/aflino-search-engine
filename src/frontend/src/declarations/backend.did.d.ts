@@ -32,6 +32,108 @@ export interface AdResult {
   'bidAmount' : bigint,
   'destinationUrl' : string,
 }
+export type AdSyncAccountType = { 'business' : null } |
+  { 'individual' : null };
+export type AdSyncCurrency = { 'EUR' : null } |
+  { 'INR' : null } |
+  { 'USD' : null };
+export interface AdSyncInvoice {
+  'id' : bigint,
+  'finalAmount' : bigint,
+  'createdAt' : bigint,
+  'reference' : string,
+  'invoiceType' : { 'earning' : null } |
+    { 'payout' : null },
+  'taxAmount' : bigint,
+  'amount' : bigint,
+  'syncId' : string,
+}
+export interface AdSyncKycRecord {
+  'status' : AdSyncKycStatus,
+  'submittedAt' : [] | [bigint],
+  'lastUpdatedAt' : bigint,
+  'adminNotes' : string,
+  'verifiedAt' : [] | [bigint],
+  'syncId' : string,
+}
+export type AdSyncKycStatus = { 'verified' : null } |
+  { 'pending' : null } |
+  { 'none' : null };
+export interface AdSyncPaymentDetails {
+  'method' : AdSyncPaymentMethod,
+  'country' : string,
+  'swiftCode' : [] | [string],
+  'iban' : [] | [string],
+  'ifsc' : [] | [string],
+  'accountName' : string,
+  'upiId' : [] | [string],
+  'accountNumber' : [] | [string],
+  'syncId' : string,
+}
+export type AdSyncPaymentMethod = { 'upi' : null } |
+  { 'bank' : null } |
+  { 'swift' : null };
+export interface AdSyncPayoutLog {
+  'id' : bigint,
+  'status' : AdSyncPayoutStatus,
+  'completedAt' : [] | [bigint],
+  'paymentMethod' : string,
+  'createdAt' : bigint,
+  'amount' : bigint,
+  'syncId' : string,
+}
+export type AdSyncPayoutStatus = { 'completed' : null } |
+  { 'processing' : null } |
+  { 'failed' : null };
+export type AdSyncRole = { 'both' : null } |
+  { 'publisher' : null } |
+  { 'advertiser' : null };
+export interface AdSyncTaxProfile {
+  'country' : string,
+  'gstNumber' : string,
+  'lastUpdatedAt' : bigint,
+  'panNumber' : string,
+  'taxRate' : bigint,
+  'syncId' : string,
+}
+export interface AdSyncTransaction {
+  'id' : bigint,
+  'transactionType' : AdSyncTransactionType,
+  'createdAt' : bigint,
+  'amount' : bigint,
+  'syncId' : string,
+  'reason' : AdSyncTransactionReason,
+}
+export type AdSyncTransactionReason = { 'topup' : null } |
+  { 'earning' : null } |
+  { 'ad_click' : null } |
+  { 'payout' : null } |
+  { 'refund' : null };
+export type AdSyncTransactionType = { 'credit' : null } |
+  { 'debit' : null };
+export interface AdSyncUser {
+  'country' : string,
+  'city' : string,
+  'createdAt' : bigint,
+  'role' : AdSyncRole,
+  'fullName' : string,
+  'email' : string,
+  'kycStatus' : AdSyncKycStatus,
+  'state' : string,
+  'accountType' : AdSyncAccountType,
+  'address' : string,
+  'passwordHash' : string,
+  'mobile' : string,
+  'syncId' : string,
+}
+export interface AdSyncWallet {
+  'balance' : bigint,
+  'createdAt' : bigint,
+  'totalEarned' : bigint,
+  'totalSpent' : bigint,
+  'currency' : AdSyncCurrency,
+  'syncId' : string,
+}
 export interface AdvertiserProfile {
   'status' : AdvertiserStatus,
   'appliedAt' : bigint,
@@ -103,9 +205,21 @@ export type PageStatus = { 'pending' : null } |
   { 'indexed' : null };
 export type Result = { 'ok' : AdvertiserWallet } |
   { 'err' : string };
-export type Result_1 = { 'ok' : null } |
+export type Result_1 = { 'ok' : AdSyncWallet } |
   { 'err' : string };
-export type Result_2 = {
+export type Result_2 = { 'ok' : AdSyncKycRecord } |
+  { 'err' : string };
+export type Result_3 = { 'ok' : string } |
+  { 'err' : string };
+export type Result_4 = { 'ok' : AdSyncPaymentDetails } |
+  { 'err' : string };
+export type Result_5 = { 'ok' : AdSyncUser } |
+  { 'err' : string };
+export type Result_6 = { 'ok' : null } |
+  { 'err' : string };
+export type Result_7 = { 'ok' : AdSyncTaxProfile } |
+  { 'err' : string };
+export type Result_8 = {
     'ok' : { 'orderId' : string, 'amount' : bigint, 'keyId' : string }
   } |
   { 'err' : string };
@@ -196,23 +310,47 @@ export interface http_request_result {
 }
 export interface _SERVICE {
   '_initializeAccessControl' : ActorMethod<[], undefined>,
+  'addAdSyncBalance' : ActorMethod<[string, bigint], Result_1>,
   'addAdvertiserBalance' : ActorMethod<[string, bigint], undefined>,
   'addBalance' : ActorMethod<[string, bigint], Result>,
   'addToBlacklist' : ActorMethod<[string, string], undefined>,
   'addToCrawlQueue' : ActorMethod<[bigint], undefined>,
+  'adminUpdateAdSyncKycStatus' : ActorMethod<
+    [string, AdSyncKycStatus, string],
+    Result_2
+  >,
+  'adminUpdatePayoutStatus' : ActorMethod<
+    [bigint, AdSyncPayoutStatus],
+    Result_3
+  >,
   'applyForAdvertiser' : ActorMethod<[string], undefined>,
   'approveAdvertiser' : ActorMethod<[string], undefined>,
   'approveWebsite' : ActorMethod<[bigint], Website>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'checkAndQueueRecrawl' : ActorMethod<[], bigint>,
+  'createAdSyncRazorpayOrder' : ActorMethod<[string, bigint], Result_8>,
   'createCampaign' : ActorMethod<
     [string, string, bigint, bigint, bigint, Array<string>, string],
     Campaign
   >,
-  'createRazorpayOrder' : ActorMethod<[string, bigint], Result_2>,
+  'createRazorpayOrder' : ActorMethod<[string, bigint], Result_8>,
   'createWallet' : ActorMethod<[string], AdvertiserWallet>,
+  'deductOnAdClick' : ActorMethod<[string, string, bigint, string], Result_3>,
   'deleteWebsite' : ActorMethod<[bigint], undefined>,
   'editWebsite' : ActorMethod<[bigint, string, string, Array<string>], Website>,
+  'getAdSyncInvoices' : ActorMethod<[string], Array<AdSyncInvoice>>,
+  'getAdSyncKycRecord' : ActorMethod<[string], [] | [AdSyncKycRecord]>,
+  'getAdSyncPaymentDetails' : ActorMethod<
+    [string],
+    [] | [AdSyncPaymentDetails]
+  >,
+  'getAdSyncPayoutLogs' : ActorMethod<[string], Array<AdSyncPayoutLog>>,
+  'getAdSyncRevenueShare' : ActorMethod<[], bigint>,
+  'getAdSyncTaxProfile' : ActorMethod<[string], Result_7>,
+  'getAdSyncTransactions' : ActorMethod<[string], Array<AdSyncTransaction>>,
+  'getAdSyncUser' : ActorMethod<[string], [] | [AdSyncUser]>,
+  'getAdSyncUserBySyncId' : ActorMethod<[string], [] | [AdSyncUser]>,
+  'getAdSyncWallet' : ActorMethod<[string], [] | [AdSyncWallet]>,
   'getAdsEnabled' : ActorMethod<[], boolean>,
   'getAdsForSearch' : ActorMethod<[string], Array<AdResult>>,
   'getAllAdvertiserApplications' : ActorMethod<[], Array<AdvertiserProfile>>,
@@ -241,13 +379,15 @@ export interface _SERVICE {
   'getWallet' : ActorMethod<[string], [] | [AdvertiserWallet]>,
   'importSeedData' : ActorMethod<[Array<SeedEntry>], bigint>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'loginAdSyncUser' : ActorMethod<[string, string], Result_5>,
   'pauseCampaign' : ActorMethod<[bigint], undefined>,
+  'processPayouts' : ActorMethod<[], Array<AdSyncPayoutLog>>,
   'rankAds' : ActorMethod<[string], Array<AdMatchResult>>,
   'recalculateAllSpamScores' : ActorMethod<[], bigint>,
   'recalculateSpamScore' : ActorMethod<[bigint], bigint>,
   'reclaimDomain' : ActorMethod<[bigint, string], Website>,
-  'recordAdClick' : ActorMethod<[bigint, string], Result_1>,
-  'recordAdClickV2' : ActorMethod<[bigint, string], Result_1>,
+  'recordAdClick' : ActorMethod<[bigint, string], Result_6>,
+  'recordAdClickV2' : ActorMethod<[bigint, string], Result_6>,
   'recordAdImpression' : ActorMethod<[bigint], undefined>,
   'recordAdImpressionV2' : ActorMethod<[bigint], undefined>,
   'recordClick' : ActorMethod<[string], undefined>,
@@ -255,6 +395,21 @@ export interface _SERVICE {
   'recordUserClick' : ActorMethod<[string, string], undefined>,
   'recordUserSearch' : ActorMethod<[string, string], undefined>,
   'refreshUserInterests' : ActorMethod<[string], undefined>,
+  'registerAdSyncUser' : ActorMethod<
+    [
+      string,
+      string,
+      string,
+      string,
+      AdSyncAccountType,
+      AdSyncRole,
+      string,
+      string,
+      string,
+      string,
+    ],
+    Result_5
+  >,
   'rejectAdvertiser' : ActorMethod<[string], undefined>,
   'rejectWebsite' : ActorMethod<[bigint], Website>,
   'removeFromBlacklist' : ActorMethod<[string], undefined>,
@@ -268,8 +423,28 @@ export interface _SERVICE {
   'runOwnershipCleanup' : ActorMethod<[], bigint>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'searchWebsites' : ActorMethod<[string, [] | [string]], Array<Website>>,
+  'setAdSyncPaymentDetails' : ActorMethod<
+    [
+      string,
+      string,
+      AdSyncPaymentMethod,
+      [] | [string],
+      [] | [string],
+      [] | [string],
+      [] | [string],
+      [] | [string],
+      string,
+    ],
+    Result_4
+  >,
+  'setAdSyncRevenueShare' : ActorMethod<[bigint], Result_3>,
+  'setAdSyncTaxProfile' : ActorMethod<
+    [string, string, string, string, bigint],
+    Result_3
+  >,
   'setAdminBoost' : ActorMethod<[bigint, bigint], Website>,
   'setAdsEnabled' : ActorMethod<[boolean], undefined>,
+  'submitAdSyncKyc' : ActorMethod<[string], Result_2>,
   'submitWebsite' : ActorMethod<
     [string, string, string, string, Array<string>],
     Website
@@ -282,6 +457,10 @@ export interface _SERVICE {
   'updateLastCrawledAt' : ActorMethod<[bigint], undefined>,
   'updatePageStatus' : ActorMethod<[bigint, PageStatus], undefined>,
   'updateSitemap' : ActorMethod<[bigint, string], Website>,
+  'verifyAdSyncRazorpayPayment' : ActorMethod<
+    [string, string, string, string, bigint],
+    Result_1
+  >,
   'verifyDomain' : ActorMethod<[bigint], boolean>,
   'verifyRazorpayPayment' : ActorMethod<
     [string, string, string, string, bigint],

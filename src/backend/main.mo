@@ -679,6 +679,23 @@ actor {
       });
       websitesV6 := [];
     };
+    // AdSync KYC migration: migrate legacy records (with proof-status fields) into V2 (simplified)
+    if (adSyncKycRecordsV2.size() == 0 and adSyncKycRecords.size() > 0) {
+      adSyncKycRecordsV2 := adSyncKycRecords.map<(Text, AdSyncKycRecordLegacy), (Text, AdSyncKycRecord)>(
+        func(entry) {
+          let r = entry.1;
+          (entry.0, {
+            syncId        = r.syncId;
+            status        = r.status;
+            submittedAt   = r.submittedAt;
+            verifiedAt    = r.verifiedAt;
+            adminNotes    = r.adminNotes;
+            lastUpdatedAt = r.lastUpdatedAt;
+          })
+        }
+      );
+      adSyncKycRecords := [];
+    };
   };
 
   // ─── Auto-expiry helper ───────────────────────────────────────────────────
@@ -3953,6 +3970,1031 @@ actor {
     ads := ads.map(func(a : Ad) : Ad {
       if (a.id == adId) { { a with impressions = a.impressions + 1 } } else { a }
     });
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ─── AFLINO ADSYNC CORE ACCOUNT SYSTEM ─────────────────────────────────────
+  // ADDITIVE — does not touch any existing types or stable vars above.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ─── AdSync Types ─────────────────────────────────────────────────────────
+
+  public type AdSyncAccountType = { #individual; #business };
+
+  public type AdSyncRole = { #advertiser; #publisher; #both };
+
+  public type AdSyncKycStatus = { #none; #pending; #verified };
+
+  public type AdSyncCurrency = { #INR; #USD; #EUR };
+
+  public type AdSyncUser = {
+    email       : Text;
+    fullName    : Text;
+    mobile      : Text;
+    passwordHash : Text;
+    syncId      : Text;
+    accountType : AdSyncAccountType;
+    role        : AdSyncRole;
+    country     : Text;
+    state       : Text;
+    city        : Text;
+    address     : Text;
+    createdAt   : Int;
+    kycStatus   : AdSyncKycStatus;
+  };
+
+  public type AdSyncWallet = {
+    syncId       : Text;
+    balance      : Nat;
+    totalSpent   : Nat;
+    totalEarned  : Nat;
+    currency     : AdSyncCurrency;
+    createdAt    : Int;
+  };
+
+  public type AdSyncPaymentMethod = { #upi; #bank; #swift };
+
+  public type AdSyncPaymentDetails = {
+    syncId        : Text;
+    country       : Text;
+    method        : AdSyncPaymentMethod;
+    upiId         : ?Text;
+    accountNumber : ?Text;
+    ifsc          : ?Text;
+    swiftCode     : ?Text;
+    iban          : ?Text;
+    accountName   : Text;
+  };
+
+  public type AdSyncKycRecord = {
+    syncId        : Text;
+    status        : AdSyncKycStatus;
+    submittedAt   : ?Int;
+    verifiedAt    : ?Int;
+    adminNotes    : Text;
+    lastUpdatedAt : Int;
+  };
+
+  // ─── AdSync Billing & Earnings Types ─────────────────────────────────────
+
+  public type AdSyncTransactionType = { #credit; #debit };
+
+  public type AdSyncTransactionReason = { #ad_click; #earning; #topup; #payout; #refund };
+
+  public type AdSyncTransaction = {
+    id              : Nat;
+    syncId          : Text;
+    transactionType : AdSyncTransactionType;
+    amount          : Nat;
+    reason          : AdSyncTransactionReason;
+    createdAt       : Int;
+  };
+
+  public type AdSyncClickLog = {
+    clickId           : Text;
+    advertiserSyncId  : Text;
+    publisherSyncId   : Text;
+    ipAddress         : Text;
+    timestamp         : Int;
+  };
+
+  public type AdSyncPayoutStatus = { #processing; #completed; #failed };
+
+  public type AdSyncPayoutLog = {
+    id            : Nat;
+    syncId        : Text;
+    amount        : Nat;
+    status        : AdSyncPayoutStatus;
+    paymentMethod : Text;
+    createdAt     : Int;
+    completedAt   : ?Int;
+  };
+
+  public type AdSyncTaxProfile = {
+    syncId        : Text;
+    country       : Text;
+    panNumber     : Text;
+    gstNumber     : Text;
+    taxRate       : Nat;
+    lastUpdatedAt : Int;
+  };
+
+  public type AdSyncInvoice = {
+    id          : Nat;
+    syncId      : Text;
+    amount      : Nat;
+    taxAmount   : Nat;
+    finalAmount : Nat;
+    invoiceType : { #earning; #payout };
+    reference   : Text;
+    createdAt   : Int;
+  };
+
+  // Legacy type for migration (had extra proof-status fields)
+  type AdSyncKycRecordLegacy = {
+    syncId              : Text;
+    status              : AdSyncKycStatus;
+    idProofStatus       : AdSyncKycStatus;
+    panStatus           : AdSyncKycStatus;
+    addressProofStatus  : AdSyncKycStatus;
+    submittedAt         : ?Int;
+    verifiedAt          : ?Int;
+    adminNotes          : Text;
+    lastUpdatedAt       : Int;
+  };
+
+  // ─── AdSync Stable State ──────────────────────────────────────────────────
+
+  stable var adSyncUsers          : [(Text, AdSyncUser)]           = []; // keyed by email
+  stable var adSyncWallets        : [(Text, AdSyncWallet)]         = []; // keyed by syncId
+  stable var adSyncPaymentDetails : [(Text, AdSyncPaymentDetails)] = []; // keyed by syncId
+  // adSyncKycRecords uses legacy type to maintain stable compatibility with previous deployment.
+  // Migration in postupgrade strips the extra proof-status fields into adSyncKycRecordsV2.
+  stable var adSyncKycRecords     : [(Text, AdSyncKycRecordLegacy)] = []; // legacy, keyed by syncId
+  stable var adSyncKycRecordsV2   : [(Text, AdSyncKycRecord)]       = []; // current, keyed by syncId
+  stable var adSyncProcessedOrderIds : [Text]                       = []; // Razorpay dedup for AdSync
+
+  // ─── AdSync Billing & Payout Stable State ─────────────────────────────────
+  stable var adSyncTransactions      : [(Nat, AdSyncTransaction)]   = []; // keyed by id
+  stable var adSyncNextTransactionId : Nat                          = 1;
+  stable var adSyncClickLogs         : [AdSyncClickLog]             = [];
+  stable var adSyncPayoutLogs        : [(Nat, AdSyncPayoutLog)]     = []; // keyed by id
+  stable var adSyncNextPayoutId      : Nat                          = 1;
+  stable var adSyncTaxProfiles       : [(Text, AdSyncTaxProfile)]   = []; // keyed by syncId
+  stable var adSyncInvoices          : [(Nat, AdSyncInvoice)]       = []; // keyed by id
+  stable var adSyncNextInvoiceId     : Nat                          = 1;
+  stable var adSyncRevenueShare      : Nat                          = 70; // 70%
+  stable var adSyncMinPayout         : Nat                          = 500;
+
+  // ─── AdSync Private Helpers ───────────────────────────────────────────────
+
+  // Generates a unique "afl_sync_" + 20 random alphanumeric characters syncId.
+  // Uses Time.now() as entropy source; retries until unique.
+  func generateSyncId() : Text {
+    let ALPHA_NUM : [Char] = [
+      'a','b','c','d','e','f','g','h','i','j','k','l','m',
+      'n','o','p','q','r','s','t','u','v','w','x','y','z',
+      'A','B','C','D','E','F','G','H','I','J','K','L','M',
+      'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+      '0','1','2','3','4','5','6','7','8','9'
+    ];
+    let alphaLen = ALPHA_NUM.size(); // 62
+
+    // Build a 20-char random suffix using bits from Time.now()
+    func buildCandidate(seed : Int) : Text {
+      var s = "afl_sync_";
+      var n : Nat = if (seed < 0) { Int.abs(seed) } else { seed.toNat() };
+      // Mix in array size for additional entropy
+      n := n + adSyncUsers.size() * 1_000_000_007;
+      var i = 0;
+      while (i < 20) {
+        let idx = n % alphaLen;
+        s := s # Text.fromChar(ALPHA_NUM[idx]);
+        // LCG-style mixing
+        n := (n * 6364136223846793005 + 1442695040888963407) % 18446744073709551615;
+        i += 1;
+      };
+      s
+    };
+
+    var attempt = 0;
+    var candidate = buildCandidate(Time.now() + attempt);
+    while (syncIdExists(candidate) and attempt < 100) {
+      attempt += 1;
+      candidate := buildCandidate(Time.now() + attempt * 999_983);
+    };
+    candidate
+  };
+
+  // Assigns currency based on user's country (auto-assignment, not user-selected)
+  func assignCurrencyByCountry(country : Text) : AdSyncCurrency {
+    let c = country.toLower();
+    if (c == "india") { return #INR };
+    if (c == "united states" or c == "usa" or c == "us") { return #USD };
+    // European countries → EUR
+    let europeanCountries : [Text] = [
+      "germany", "france", "italy", "spain", "netherlands", "belgium",
+      "sweden", "norway", "denmark", "finland", "austria", "portugal",
+      "greece", "poland", "czech republic", "hungary", "romania", "croatia",
+      "bulgaria", "slovakia", "slovenia", "estonia", "latvia", "lithuania",
+      "luxembourg", "malta", "cyprus"
+    ];
+    for (ec in europeanCountries.vals()) {
+      if (c == ec) { return #EUR };
+    };
+    #USD // default for all other countries
+  };
+
+  func isValidEmail(email : Text) : Bool {
+    if (not email.contains(#char '@')) { return false };
+    let parts = email.split(#char '@');
+    ignore parts.next(); // local part
+    switch (parts.next()) {
+      case (null) { false };
+      case (?domain) { domain.contains(#char '.') };
+    }
+  };
+
+  func syncIdExists(syncId : Text) : Bool {
+    for ((_, user) in adSyncUsers.vals()) {
+      if (user.syncId == syncId) { return true };
+    };
+    false
+  };
+
+  func getAdSyncUserInternal(email : Text) : ?AdSyncUser {
+    for ((k, u) in adSyncUsers.vals()) {
+      if (k == email) { return ?u };
+    };
+    null
+  };
+
+  func getAdSyncWalletInternal(syncId : Text) : ?AdSyncWallet {
+    for ((k, w) in adSyncWallets.vals()) {
+      if (k == syncId) { return ?w };
+    };
+    null
+  };
+
+  func getAdSyncKycRecordInternal(syncId : Text) : ?AdSyncKycRecord {
+    for ((k, r) in adSyncKycRecordsV2.vals()) {
+      if (k == syncId) { return ?r };
+    };
+    null
+  };
+
+  // Private implementation for adding balance (reused by verify and public func)
+  func addAdSyncBalanceInternal(syncId : Text, amount : Nat) : Result<AdSyncWallet, Text> {
+    switch (getAdSyncWalletInternal(syncId)) {
+      case (null) { #err("Wallet not found for syncId") };
+      case (?wallet) {
+        let updated : AdSyncWallet = {
+          wallet with
+          balance     = wallet.balance + amount;
+          totalEarned = wallet.totalEarned + amount;
+        };
+        adSyncWallets := adSyncWallets.map<(Text, AdSyncWallet), (Text, AdSyncWallet)>(
+          func(entry) {
+            if (entry.0 == syncId) { (syncId, updated) } else { entry }
+          }
+        );
+        #ok(updated)
+      };
+    }
+  };
+
+  // ─── AdSync Public Functions ──────────────────────────────────────────────
+
+  // 1. Register a new AdSync user
+  public shared func registerAdSyncUser(
+    email       : Text,
+    fullName    : Text,
+    mobile      : Text,
+    passwordHash : Text,
+    accountType : AdSyncAccountType,
+    role        : AdSyncRole,
+    country     : Text,
+    state_      : Text,
+    city        : Text,
+    address     : Text
+  ) : async Result<AdSyncUser, Text> {
+    // ── Input validation ─────────────────────────────────────────────────────
+    if (not isValidEmail(email))      { return #err("Invalid email format") };
+    if (fullName.trim(#char ' ').size() == 0) { return #err("Full name is required") };
+    if (mobile.trim(#char ' ').size() == 0)   { return #err("Mobile number is required") };
+    if (country.trim(#char ' ').size() == 0)  { return #err("Country is required") };
+    if (state_.trim(#char ' ').size() == 0)   { return #err("State is required") };
+    if (city.trim(#char ' ').size() == 0)     { return #err("City is required") };
+
+    // ── Email uniqueness (within adSyncUsers only) ────────────────────────────
+    switch (getAdSyncUserInternal(email)) {
+      case (?_) { return #err("Email already registered") };
+      case (null) {};
+    };
+
+    // ── Generate unique syncId ────────────────────────────────────────────────
+    let syncId = generateSyncId();
+
+    // ── Create user ───────────────────────────────────────────────────────────
+    let now = Time.now();
+    let user : AdSyncUser = {
+      email;
+      fullName;
+      mobile;
+      passwordHash;
+      syncId;
+      accountType;
+      role;
+      country;
+      state  = state_;
+      city;
+      address;
+      createdAt = now;
+      kycStatus = #none;
+    };
+    adSyncUsers := adSyncUsers.concat([(email, user)]);
+
+    // ── Auto-create AdSyncWallet ──────────────────────────────────────────────
+    let walletCurrency = assignCurrencyByCountry(country);
+    let wallet : AdSyncWallet = {
+      syncId;
+      balance     = 0;
+      totalSpent  = 0;
+      totalEarned = 0;
+      currency    = walletCurrency;
+      createdAt = now;
+    };
+    adSyncWallets := adSyncWallets.concat([(syncId, wallet)]);
+
+    // ── Auto-create initial KYC record ────────────────────────────────────────
+    let kycRecord : AdSyncKycRecord = {
+      syncId;
+      status        = #none;
+      submittedAt   = null;
+      verifiedAt    = null;
+      adminNotes    = "";
+      lastUpdatedAt = now;
+    };
+    adSyncKycRecordsV2 := adSyncKycRecordsV2.concat([(syncId, kycRecord)]);
+
+    #ok(user)
+  };
+
+  // 2. Login (compare passwordHash)
+  public shared func loginAdSyncUser(email : Text, passwordHash : Text) : async Result<AdSyncUser, Text> {
+    switch (getAdSyncUserInternal(email)) {
+      case (null) { #err("User not found") };
+      case (?user) {
+        if (user.passwordHash != passwordHash) {
+          #err("Invalid credentials")
+        } else {
+          #ok(user)
+        }
+      };
+    }
+  };
+
+  // 3. Get user by email (query)
+  public query func getAdSyncUser(email : Text) : async ?AdSyncUser {
+    getAdSyncUserInternal(email)
+  };
+
+  // 4. Get user by syncId (query)
+  public query func getAdSyncUserBySyncId(syncId : Text) : async ?AdSyncUser {
+    for ((_, user) in adSyncUsers.vals()) {
+      if (user.syncId == syncId) { return ?user };
+    };
+    null
+  };
+
+  // 5. Get wallet by syncId (query)
+  public query func getAdSyncWallet(syncId : Text) : async ?AdSyncWallet {
+    getAdSyncWalletInternal(syncId)
+  };
+
+  // 6. Get KYC record by syncId (query)
+  public query func getAdSyncKycRecord(syncId : Text) : async ?AdSyncKycRecord {
+    getAdSyncKycRecordInternal(syncId)
+  };
+
+  // 7. Set payment details (with country-based method validation)
+  public shared func setAdSyncPaymentDetails(
+    syncId        : Text,
+    country       : Text,
+    method        : AdSyncPaymentMethod,
+    upiId         : ?Text,
+    accountNumber : ?Text,
+    ifsc          : ?Text,
+    swiftCode     : ?Text,
+    iban          : ?Text,
+    accountName   : Text
+  ) : async Result<AdSyncPaymentDetails, Text> {
+    // Verify syncId exists
+    switch (getAdSyncWalletInternal(syncId)) {
+      case (null) { return #err("Wallet not found for syncId") };
+      case (?_) {};
+    };
+
+    if (accountName.trim(#char ' ').size() == 0) {
+      return #err("Account name is required");
+    };
+
+    // Country-based method validation
+    let countryLower = country.toLower();
+    let isIndia = countryLower == "india";
+
+    // India: method must be #upi or #bank
+    if (isIndia) {
+      switch (method) {
+        case (#swift) { return #err("India accounts must use UPI or Bank transfer") };
+        case (_) {};
+      };
+    } else {
+      // International: method must be #swift
+      switch (method) {
+        case (#upi)  { return #err("International accounts must use SWIFT") };
+        case (#bank) { return #err("International accounts must use SWIFT") };
+        case (#swift) {};
+      };
+    };
+
+    // Required fields per method
+    switch (method) {
+      case (#upi) {
+        switch (upiId) {
+          case (null) { return #err("UPI ID is required for UPI method") };
+          case (?id) {
+            if (id.trim(#char ' ').size() == 0) {
+              return #err("UPI ID cannot be empty");
+            };
+          };
+        };
+      };
+      case (#bank) {
+        switch (accountNumber) {
+          case (null) { return #err("Account number is required for Bank method") };
+          case (?acc) {
+            if (acc.trim(#char ' ').size() == 0) {
+              return #err("Account number cannot be empty");
+            };
+          };
+        };
+        switch (ifsc) {
+          case (null) { return #err("IFSC code is required for Bank method") };
+          case (?code) {
+            if (code.trim(#char ' ').size() == 0) {
+              return #err("IFSC code cannot be empty");
+            };
+          };
+        };
+      };
+      case (#swift) {
+        switch (swiftCode) {
+          case (null) { return #err("SWIFT code is required for SWIFT method") };
+          case (?code) {
+            if (code.trim(#char ' ').size() == 0) {
+              return #err("SWIFT code cannot be empty");
+            };
+          };
+        };
+      };
+    };
+
+    let details : AdSyncPaymentDetails = {
+      syncId;
+      country;
+      method;
+      upiId;
+      accountNumber;
+      ifsc;
+      swiftCode;
+      iban;
+      accountName;
+    };
+
+    // Upsert payment details
+    var found = false;
+    adSyncPaymentDetails := adSyncPaymentDetails.map<(Text, AdSyncPaymentDetails), (Text, AdSyncPaymentDetails)>(
+      func(entry) {
+        if (entry.0 == syncId) {
+          found := true;
+          (syncId, details)
+        } else { entry }
+      }
+    );
+    if (not found) {
+      adSyncPaymentDetails := adSyncPaymentDetails.concat([(syncId, details)]);
+    };
+
+    #ok(details)
+  };
+
+  // 8. Get payment details by syncId (query)
+  public query func getAdSyncPaymentDetails(syncId : Text) : async ?AdSyncPaymentDetails {
+    for ((k, d) in adSyncPaymentDetails.vals()) {
+      if (k == syncId) { return ?d };
+    };
+    null
+  };
+
+  // 9. Submit KYC (sets status to #pending)
+  public shared func submitAdSyncKyc(syncId : Text) : async Result<AdSyncKycRecord, Text> {
+    switch (getAdSyncKycRecordInternal(syncId)) {
+      case (null) { return #err("KYC record not found for syncId") };
+      case (?record) {
+        let now = Time.now();
+        let updated : AdSyncKycRecord = {
+          record with
+          status        = #pending;
+          submittedAt   = ?now;
+          lastUpdatedAt = now;
+        };
+        adSyncKycRecordsV2 := adSyncKycRecordsV2.map<(Text, AdSyncKycRecord), (Text, AdSyncKycRecord)>(
+          func(entry) {
+            if (entry.0 == syncId) { (syncId, updated) } else { entry }
+          }
+        );
+        // Update kycStatus on AdSyncUser
+        adSyncUsers := adSyncUsers.map<(Text, AdSyncUser), (Text, AdSyncUser)>(
+          func(entry) {
+            if (entry.1.syncId == syncId) {
+              (entry.0, { entry.1 with kycStatus = #pending })
+            } else { entry }
+          }
+        );
+        #ok(updated)
+      };
+    }
+  };
+
+  // 10. Admin: update KYC status
+  public shared ({ caller }) func adminUpdateAdSyncKycStatus(
+    syncId     : Text,
+    status     : AdSyncKycStatus,
+    adminNotes : Text
+  ) : async Result<AdSyncKycRecord, Text> {
+    requireAdmin(caller);
+    switch (getAdSyncKycRecordInternal(syncId)) {
+      case (null) { return #err("KYC record not found") };
+      case (?record) {
+        let now = Time.now();
+        let updated : AdSyncKycRecord = {
+          record with
+          status;
+          adminNotes;
+          lastUpdatedAt = now;
+          verifiedAt    = if (status == #verified) { ?now } else { record.verifiedAt };
+        };
+        adSyncKycRecordsV2 := adSyncKycRecordsV2.map<(Text, AdSyncKycRecord), (Text, AdSyncKycRecord)>(
+          func(entry) {
+            if (entry.0 == syncId) { (syncId, updated) } else { entry }
+          }
+        );
+        // Update kycStatus on AdSyncUser
+        adSyncUsers := adSyncUsers.map<(Text, AdSyncUser), (Text, AdSyncUser)>(
+          func(entry) {
+            if (entry.1.syncId == syncId) {
+              (entry.0, { entry.1 with kycStatus = status })
+            } else { entry }
+          }
+        );
+        #ok(updated)
+      };
+    }
+  };
+
+  // 11. Create Razorpay order for AdSync wallet top-up
+  public shared func createAdSyncRazorpayOrder(
+    syncId : Text,
+    amount : Nat
+  ) : async Result<{ orderId : Text; keyId : Text; amount : Nat }, Text> {
+    // Validate syncId has a wallet and that it is INR (India only)
+    switch (getAdSyncWalletInternal(syncId)) {
+      case (null) { return #err("Wallet not found for syncId") };
+      case (?wallet) {
+        switch (wallet.currency) {
+          case (#INR) {}; // allowed
+          case (_) { return #err("Razorpay is only available for INR wallets (India accounts)") };
+        };
+      };
+    };
+
+    if (amount < 100) { return #err("Minimum amount is 100 paise (₹1)") };
+    if (amount > 100_000_000) { return #err("Maximum amount is 100000000 paise") };
+
+    let credentials = base64EncodeText(RAZORPAY_KEY_ID # ":" # RAZORPAY_KEY_SECRET);
+    let authHeader  = "Basic " # credentials;
+    let receipt     = "adsync_" # syncId;
+    let requestBody = "{\"amount\":" # amount.toText()
+      # ",\"currency\":\"INR\",\"receipt\":\""
+      # receipt # "\"}";
+
+    let headers : [Outcall.Header] = [
+      { name = "Authorization"; value = authHeader },
+      { name = "Content-Type";  value = "application/json" },
+    ];
+
+    try {
+      let responseText = await Outcall.httpPostRequest(
+        RAZORPAY_ORDERS_URL,
+        headers,
+        requestBody,
+        transform
+      );
+
+      if (not responseText.contains(#text "\"id\":\"")) {
+        return #err("Failed to create order: " # responseText.size().toText() # " bytes returned");
+      };
+      let afterId = responseText.split(#text "\"id\":\"");
+      ignore afterId.next();
+      switch (afterId.next()) {
+        case (null) { return #err("Could not parse order ID") };
+        case (?rest) {
+          let parts = rest.split(#text "\"");
+          switch (parts.next()) {
+            case (null) { return #err("Could not parse order ID value") };
+            case (?orderId) {
+              if (orderId.size() == 0) { return #err("Empty order ID returned") };
+              #ok({ orderId; keyId = RAZORPAY_KEY_ID; amount })
+            };
+          }
+        };
+      }
+    } catch (_) {
+      #err("HTTP outcall failed — check network or Razorpay credentials")
+    }
+  };
+
+  // 12. Verify Razorpay payment for AdSync and credit wallet
+  public shared func verifyAdSyncRazorpayPayment(
+    syncId            : Text,
+    razorpayOrderId   : Text,
+    razorpayPaymentId : Text,
+    razorpaySignature : Text,
+    amount            : Nat
+  ) : async Result<AdSyncWallet, Text> {
+    // Input validation
+    if (syncId.size() == 0 or syncId.size() > 100)             { return #err("Invalid syncId") };
+    if (razorpayOrderId.size() == 0 or razorpayOrderId.size() > 100) { return #err("Invalid order ID") };
+    if (razorpayPaymentId.size() == 0 or razorpayPaymentId.size() > 100) { return #err("Invalid payment ID") };
+    if (razorpaySignature.size() == 0 or razorpaySignature.size() > 200) { return #err("Invalid signature") };
+    if (amount < 100) { return #err("Minimum amount is 100 paise") };
+    if (amount > 100_000_000) { return #err("Amount out of range") };
+
+    // Deduplication: reject already-processed order IDs
+    for (oid in adSyncProcessedOrderIds.vals()) {
+      if (oid == razorpayOrderId) { return #err("Order already processed") };
+    };
+
+    // HMAC-SHA256 signature verification
+    let message      : Text   = razorpayOrderId # "|" # razorpayPaymentId;
+    let keyBytes     : [Nat8] = textToBytes(RAZORPAY_KEY_SECRET);
+    let msgBytes     : [Nat8] = textToBytes(message);
+    let computedHmac : [Nat8] = hmacSha256(keyBytes, msgBytes);
+    let computedHex  : Text   = toHex(computedHmac);
+
+    if (not constantTimeEqual(computedHex, razorpaySignature)) {
+      return #err("Invalid payment signature");
+    };
+
+    // Mark order as processed
+    adSyncProcessedOrderIds := adSyncProcessedOrderIds.concat([razorpayOrderId]);
+
+    // Credit wallet
+    addAdSyncBalanceInternal(syncId, amount)
+  };
+
+  // 13. Add balance to AdSync wallet (public wrapper)
+  public shared func addAdSyncBalance(syncId : Text, amount : Nat) : async Result<AdSyncWallet, Text> {
+    addAdSyncBalanceInternal(syncId, amount)
+  };
+
+  // ─── AdSync Billing & Earnings Private Helpers ────────────────────────────
+
+  // Append a transaction record and return its id
+  func appendAdSyncTransaction(
+    syncId : Text,
+    txType : AdSyncTransactionType,
+    amount : Nat,
+    reason : AdSyncTransactionReason
+  ) : Nat {
+    let id = adSyncNextTransactionId;
+    adSyncNextTransactionId += 1;
+    let tx : AdSyncTransaction = {
+      id;
+      syncId;
+      transactionType = txType;
+      amount;
+      reason;
+      createdAt = Time.now();
+    };
+    adSyncTransactions := adSyncTransactions.concat([(id, tx)]);
+    id
+  };
+
+  // Get tax profile for a syncId (returns null if not found)
+  func getAdSyncTaxProfileInternal(syncId : Text) : ?AdSyncTaxProfile {
+    for ((k, p) in adSyncTaxProfiles.vals()) {
+      if (k == syncId) { return ?p };
+    };
+    null
+  };
+
+  // Calculate tax amount: (amount * taxRate) / 100; returns 0 if no tax profile
+  func calculateAdSyncTax(syncId : Text, amount : Nat) : Nat {
+    switch (getAdSyncTaxProfileInternal(syncId)) {
+      case (null) { 0 };
+      case (?profile) { (amount * profile.taxRate) / 100 };
+    }
+  };
+
+  // Append an invoice and return its id
+  func appendAdSyncInvoice(
+    syncId      : Text,
+    amount      : Nat,
+    taxAmount   : Nat,
+    invoiceType : { #earning; #payout },
+    reference   : Text
+  ) : Nat {
+    let id = adSyncNextInvoiceId;
+    adSyncNextInvoiceId += 1;
+    let invoice : AdSyncInvoice = {
+      id;
+      syncId;
+      amount;
+      taxAmount;
+      finalAmount = amount + taxAmount;
+      invoiceType;
+      reference;
+      createdAt = Time.now();
+    };
+    adSyncInvoices := adSyncInvoices.concat([(id, invoice)]);
+    id
+  };
+
+  // Generate a deterministic click id from timestamp + syncIds
+  func generateClickId(advertiserSyncId : Text, publisherSyncId : Text) : Text {
+    let ts = Time.now();
+    let seed : Int = ts + adSyncClickLogs.size().toInt();
+    "clk_" # advertiserSyncId.size().toText()
+      # "_" # publisherSyncId.size().toText()
+      # "_" # (Int.abs(seed) % 999_999_999).toText()
+      # "_" # ts.toText()
+  };
+
+  // ─── 14. CPC Billing: deductOnAdClick ─────────────────────────────────────
+
+  public shared func deductOnAdClick(
+    advertiserSyncId : Text,
+    publisherSyncId  : Text,
+    bidAmount        : Nat,
+    ipAddress        : Text
+  ) : async Result<Text, Text> {
+    // 1. Self-click check
+    if (advertiserSyncId == publisherSyncId) {
+      return #err("self_click_rejected");
+    };
+
+    // 2. Rate limit: max 5 clicks from publisher in last 60 seconds
+    let nowNs   = Time.now();
+    let windowNs : Int = 60_000_000_000; // 60 seconds in nanoseconds
+    let cutoff  = nowNs - windowNs;
+    var recentClicks : Nat = 0;
+    for (log in adSyncClickLogs.vals()) {
+      if (log.publisherSyncId == publisherSyncId and log.timestamp > cutoff) {
+        recentClicks += 1;
+      };
+    };
+    if (recentClicks >= 5) {
+      return #err("rate_limit_exceeded");
+    };
+
+    // 3. Check advertiser wallet balance
+    switch (getAdSyncWalletInternal(advertiserSyncId)) {
+      case (null) { return #err("advertiser_wallet_not_found") };
+      case (?advWallet) {
+        if (advWallet.balance < bidAmount) {
+          return #err("insufficient_balance");
+        };
+
+        // 4. Deduct from advertiser
+        let advUpdated : AdSyncWallet = {
+          advWallet with
+          balance    = advWallet.balance - bidAmount;
+          totalSpent = advWallet.totalSpent + bidAmount;
+        };
+        adSyncWallets := adSyncWallets.map<(Text, AdSyncWallet), (Text, AdSyncWallet)>(
+          func(entry) {
+            if (entry.0 == advertiserSyncId) { (advertiserSyncId, advUpdated) } else { entry }
+          }
+        );
+        ignore appendAdSyncTransaction(advertiserSyncId, #debit, bidAmount, #ad_click);
+
+        // 5. Credit publisher
+        let earning : Nat = (bidAmount * adSyncRevenueShare) / 100;
+        switch (getAdSyncWalletInternal(publisherSyncId)) {
+          case (null) { return #err("publisher_wallet_not_found") };
+          case (?pubWallet) {
+            let pubUpdated : AdSyncWallet = {
+              pubWallet with
+              balance     = pubWallet.balance + earning;
+              totalEarned = pubWallet.totalEarned + earning;
+            };
+            adSyncWallets := adSyncWallets.map<(Text, AdSyncWallet), (Text, AdSyncWallet)>(
+              func(entry) {
+                if (entry.0 == publisherSyncId) { (publisherSyncId, pubUpdated) } else { entry }
+              }
+            );
+            ignore appendAdSyncTransaction(publisherSyncId, #credit, earning, #earning);
+
+            // 6. Auto-generate invoice for publisher earning
+            let taxAmt = calculateAdSyncTax(publisherSyncId, earning);
+            let txRef  = "earn_" # advertiserSyncId # "_" # publisherSyncId;
+            ignore appendAdSyncInvoice(publisherSyncId, earning, taxAmt, #earning, txRef);
+
+            // 7. Log click
+            let clickLog : AdSyncClickLog = {
+              clickId          = generateClickId(advertiserSyncId, publisherSyncId);
+              advertiserSyncId;
+              publisherSyncId;
+              ipAddress;
+              timestamp        = nowNs;
+            };
+            adSyncClickLogs := adSyncClickLogs.concat([clickLog]);
+
+            #ok("success")
+          };
+        };
+      };
+    };
+  };
+
+  // ─── 15. Auto Payout: processPayouts ──────────────────────────────────────
+
+  public shared ({ caller }) func processPayouts() : async [AdSyncPayoutLog] {
+    requireAdmin(caller);
+    var created : [AdSyncPayoutLog] = [];
+
+    for ((syncId, wallet) in adSyncWallets.vals()) {
+      if (wallet.balance >= adSyncMinPayout) {
+        // Check KYC
+        switch (getAdSyncKycRecordInternal(syncId)) {
+          case (null) { /* skip: no KYC record */ };
+          case (?kyc) {
+            if (kyc.status == #verified) {
+              let payoutAmount = wallet.balance;
+
+              // Determine payment method label
+              let methodLabel : Text = switch (getAdSyncPaymentDetailsInternal(syncId)) {
+                case (null)    { "unknown" };
+                case (?details) {
+                  switch (details.method) {
+                    case (#upi)   { "upi" };
+                    case (#bank)  { "bank" };
+                    case (#swift) { "swift" };
+                  }
+                };
+              };
+
+              // Create payout log (status = #processing)
+              let payoutId = adSyncNextPayoutId;
+              adSyncNextPayoutId += 1;
+              let payoutLog : AdSyncPayoutLog = {
+                id            = payoutId;
+                syncId;
+                amount        = payoutAmount;
+                status        = #processing;
+                paymentMethod = methodLabel;
+                createdAt     = Time.now();
+                completedAt   = null;
+              };
+              adSyncPayoutLogs := adSyncPayoutLogs.concat([(payoutId, payoutLog)]);
+
+              // Zero out wallet balance
+              adSyncWallets := adSyncWallets.map<(Text, AdSyncWallet), (Text, AdSyncWallet)>(
+                func(entry) {
+                  if (entry.0 == syncId) {
+                    (syncId, { entry.1 with balance = 0 })
+                  } else { entry }
+                }
+              );
+
+              // Log debit transaction
+              ignore appendAdSyncTransaction(syncId, #debit, payoutAmount, #payout);
+
+              // Auto-generate payout invoice
+              let taxAmt = calculateAdSyncTax(syncId, payoutAmount);
+              let txRef  = "payout_" # payoutId.toText();
+              ignore appendAdSyncInvoice(syncId, payoutAmount, taxAmt, #payout, txRef);
+
+              created := created.concat([payoutLog]);
+            };
+          };
+        };
+      };
+    };
+    created
+  };
+
+  // ─── 16. Tax Profile Functions ────────────────────────────────────────────
+
+  public shared func setAdSyncTaxProfile(
+    syncId    : Text,
+    country   : Text,
+    panNumber : Text,
+    gstNumber : Text,
+    taxRate   : Nat
+  ) : async Result<Text, Text> {
+    if (syncId.trim(#char ' ').size() == 0)    { return #err("syncId required") };
+    if (taxRate > 100)                          { return #err("taxRate must be 0-100") };
+
+    let now = Time.now();
+    let profile : AdSyncTaxProfile = {
+      syncId;
+      country;
+      panNumber;
+      gstNumber;
+      taxRate;
+      lastUpdatedAt = now;
+    };
+
+    var found = false;
+    adSyncTaxProfiles := adSyncTaxProfiles.map<(Text, AdSyncTaxProfile), (Text, AdSyncTaxProfile)>(
+      func(entry) {
+        if (entry.0 == syncId) { found := true; (syncId, profile) } else { entry }
+      }
+    );
+    if (not found) {
+      adSyncTaxProfiles := adSyncTaxProfiles.concat([(syncId, profile)]);
+    };
+    #ok("Tax profile saved")
+  };
+
+  public query func getAdSyncTaxProfile(syncId : Text) : async Result<AdSyncTaxProfile, Text> {
+    switch (getAdSyncTaxProfileInternal(syncId)) {
+      case (null)     { #err("Tax profile not found") };
+      case (?profile) { #ok(profile) };
+    }
+  };
+
+  // ─── 17. Payout Log Functions ─────────────────────────────────────────────
+
+  public query func getAdSyncPayoutLogs(syncId : Text) : async [AdSyncPayoutLog] {
+    adSyncPayoutLogs
+      .filter(func((_, log) : (Nat, AdSyncPayoutLog)) : Bool { log.syncId == syncId })
+      .map<(Nat, AdSyncPayoutLog), AdSyncPayoutLog>(func((_, log)) { log })
+  };
+
+  public shared ({ caller }) func adminUpdatePayoutStatus(
+    payoutId : Nat,
+    status   : AdSyncPayoutStatus
+  ) : async Result<Text, Text> {
+    requireAdmin(caller);
+    var found = false;
+    adSyncPayoutLogs := adSyncPayoutLogs.map<(Nat, AdSyncPayoutLog), (Nat, AdSyncPayoutLog)>(
+      func(entry) {
+        if (entry.0 == payoutId) {
+          found := true;
+          let now = Time.now();
+          let updated : AdSyncPayoutLog = {
+            entry.1 with
+            status;
+            completedAt = if (status == #completed) { ?now } else { entry.1.completedAt };
+          };
+          (payoutId, updated)
+        } else { entry }
+      }
+    );
+    if (found) { #ok("Payout status updated") } else { #err("Payout log not found") }
+  };
+
+  // ─── 18. Invoice Functions ────────────────────────────────────────────────
+
+  public query func getAdSyncInvoices(syncId : Text) : async [AdSyncInvoice] {
+    let filtered = adSyncInvoices
+      .filter(func((_, inv) : (Nat, AdSyncInvoice)) : Bool { inv.syncId == syncId })
+      .map(func((_, inv)) { inv });
+    // Sort by createdAt descending
+    filtered.sort(func(a : AdSyncInvoice, b : AdSyncInvoice) : { #less; #equal; #greater } {
+      if (a.createdAt > b.createdAt) { #less }
+      else if (a.createdAt < b.createdAt) { #greater }
+      else { #equal }
+    })
+  };
+
+  // ─── 19. Transaction Log Functions ───────────────────────────────────────
+
+  public query func getAdSyncTransactions(syncId : Text) : async [AdSyncTransaction] {
+    let filtered = adSyncTransactions
+      .filter(func((_, tx) : (Nat, AdSyncTransaction)) : Bool { tx.syncId == syncId })
+      .map(func((_, tx)) { tx });
+    // Sort by createdAt descending
+    filtered.sort(func(a : AdSyncTransaction, b : AdSyncTransaction) : { #less; #equal; #greater } {
+      if (a.createdAt > b.createdAt) { #less }
+      else if (a.createdAt < b.createdAt) { #greater }
+      else { #equal }
+    })
+  };
+
+  // ─── 20. Revenue Share Admin Functions ───────────────────────────────────
+
+  public shared ({ caller }) func setAdSyncRevenueShare(share : Nat) : async Result<Text, Text> {
+    requireAdmin(caller);
+    if (share > 100) { return #err("Revenue share must be 0-100") };
+    adSyncRevenueShare := share;
+    #ok("Revenue share updated to " # share.toText() # "%")
+  };
+
+  public query func getAdSyncRevenueShare() : async Nat {
+    adSyncRevenueShare
+  };
+
+  // ─── Private helper: get payment details by syncId ────────────────────────
+  func getAdSyncPaymentDetailsInternal(syncId : Text) : ?AdSyncPaymentDetails {
+    for ((k, d) in adSyncPaymentDetails.vals()) {
+      if (k == syncId) { return ?d };
+    };
+    null
   };
 
 };

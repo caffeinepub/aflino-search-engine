@@ -1,0 +1,25 @@
+{
+  "overview": "Aflino Search Engine is a production-grade search engine on the Internet Computer with an algorithm-based ranking system, monetization engine, and AdSync billing platform. Features include CPC advertising, publisher earnings, auto-payout, tax tracking, and invoice management.",
+  "features": [
+    "Algorithm-based search ranking with CTR, SEO, spam detection, and intent-aware scoring",
+    "AdSync billing system with CPC model and configurable publisher revenue share",
+    "Advertiser wallet with balance management and Razorpay payment integration",
+    "Publisher earnings with auto-payout at ₹500 threshold (KYC verified)",
+    "Transaction log, tax profiles, and invoice generation for financial compliance",
+    "Fraud protection: self-click prevention and IP-based rate limiting",
+    "Admin panel with monetization controls, KYC approval, and payout management",
+    "Discover feed with trending, recommended, recently indexed, and popular domains"
+  ],
+  "category": "productivity",
+  "tags": [
+    "search-engine",
+    "advertising",
+    "monetization",
+    "publisher-earnings",
+    "billing",
+    "invoicing",
+    "icp",
+    "motoko"
+  ],
+  "last_updated": "2026-04-09T09:43:29.147Z"
+}

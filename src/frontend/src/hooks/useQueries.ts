@@ -1,17 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AdResult,
+  AdSyncKycRecord,
+  AdSyncPaymentDetails,
+  AdSyncPaymentMethod,
+  AdSyncUser,
+  AdSyncWallet,
   AdvertiserProfile,
   AdvertiserWallet,
   BlacklistEntry,
   Campaign,
   DiscoverFeed,
+  Result_1,
+  Result_2,
+  Result_3,
+  Result_4,
+  Result_6,
   SecurityLog,
   SeedEntry,
   Transaction,
   Variant_remove_approve_block,
   Website,
 } from "../backend.d";
+import type {
+  AdSyncInvoice,
+  AdSyncPayoutLog,
+  AdSyncTaxProfile,
+  AdSyncTaxProfileResult,
+  AdSyncTextResult,
+  AdSyncTransaction,
+} from "../types/adsync-financial";
 import { useActor } from "./useActor";
 
 export function useSearchWebsites(query: string, email?: string | null) {
@@ -1045,5 +1063,329 @@ export function useVerifyRazorpayPayment() {
         queryKey: ["transactions", variables.email],
       });
     },
+  });
+}
+
+// ── AdSync hooks ──────────────────────────────────────────────────────────────
+
+export function useGetAdSyncUser(email: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncUser | null>({
+    queryKey: ["adSyncUser", email],
+    queryFn: async () => {
+      if (!actor || !email) return null;
+      return actor.getAdSyncUser(email);
+    },
+    enabled: !!actor && !isFetching && !!email,
+  });
+}
+
+export function useGetAdSyncWallet(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncWallet | null>({
+    queryKey: ["adSyncWallet", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return null;
+      return actor.getAdSyncWallet(syncId);
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useGetAdSyncKycRecord(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncKycRecord | null>({
+    queryKey: ["adSyncKyc", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return null;
+      return actor.getAdSyncKycRecord(syncId);
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useGetAdSyncPaymentDetails(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncPaymentDetails | null>({
+    queryKey: ["adSyncPaymentDetails", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return null;
+      return actor.getAdSyncPaymentDetails(syncId);
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useSetAdSyncPaymentDetails() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      syncId: string;
+      country: string;
+      method: AdSyncPaymentMethod;
+      upiId: string | null;
+      accountNumber: string | null;
+      ifsc: string | null;
+      swiftCode: string | null;
+      iban: string | null;
+      accountName: string;
+    }): Promise<Result_3> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.setAdSyncPaymentDetails(
+        data.syncId,
+        data.country,
+        data.method,
+        data.upiId,
+        data.accountNumber,
+        data.ifsc,
+        data.swiftCode,
+        data.iban,
+        data.accountName,
+      );
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["adSyncPaymentDetails", variables.syncId],
+      });
+    },
+  });
+}
+
+export function useSubmitAdSyncKyc() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      syncId: string;
+    }): Promise<Result_2> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.submitAdSyncKyc(data.syncId);
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["adSyncKyc", variables.syncId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["adSyncUser"] });
+    },
+  });
+}
+
+export function useRegisterAdSyncUser() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: {
+      email: string;
+      fullName: string;
+      mobile: string;
+      passwordHash: string;
+      accountType: import("../backend.d").AdSyncAccountType;
+      role: import("../backend.d").AdSyncRole;
+      country: string;
+      state: string;
+      city: string;
+      address: string;
+    }): Promise<Result_4> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.registerAdSyncUser(
+        data.email,
+        data.fullName,
+        data.mobile,
+        data.passwordHash,
+        data.accountType,
+        data.role,
+        data.country,
+        data.state,
+        data.city,
+        data.address,
+      );
+    },
+  });
+}
+
+export function useLoginAdSyncUser() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: {
+      email: string;
+      passwordHash: string;
+    }): Promise<Result_4> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.loginAdSyncUser(data.email, data.passwordHash);
+    },
+  });
+}
+
+export function useCreateAdSyncRazorpayOrder() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (data: {
+      syncId: string;
+      amountPaise: bigint;
+    }): Promise<Result_6> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.createAdSyncRazorpayOrder(data.syncId, data.amountPaise);
+    },
+  });
+}
+
+export function useVerifyAdSyncRazorpayPayment() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      syncId: string;
+      orderId: string;
+      paymentId: string;
+      signature: string;
+      amountPaise: bigint;
+    }): Promise<Result_1> => {
+      if (!actor) throw new Error("Not connected");
+      return actor.verifyAdSyncRazorpayPayment(
+        data.syncId,
+        data.orderId,
+        data.paymentId,
+        data.signature,
+        data.amountPaise,
+      );
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["adSyncWallet", variables.syncId],
+      });
+    },
+  });
+}
+
+// ── AdSync Financial Hooks (Billing + Earnings + Payouts + Tax + Invoices) ───
+
+export function useGetAdSyncTransactions(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncTransaction[]>({
+    queryKey: ["adSyncTransactions", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return [];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).getAdSyncTransactions(
+          syncId,
+        )) as AdSyncTransaction[];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useGetAdSyncPayoutLogs(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncPayoutLog[]>({
+    queryKey: ["adSyncPayoutLogs", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return [];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).getAdSyncPayoutLogs(
+          syncId,
+        )) as AdSyncPayoutLog[];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useGetAdSyncInvoices(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncInvoice[]>({
+    queryKey: ["adSyncInvoices", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return [];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).getAdSyncInvoices(
+          syncId,
+        )) as AdSyncInvoice[];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useGetAdSyncTaxProfile(syncId: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<AdSyncTaxProfile | null>({
+    queryKey: ["adSyncTaxProfile", syncId],
+    queryFn: async () => {
+      if (!actor || !syncId) return null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = (await (actor as any).getAdSyncTaxProfile(
+          syncId,
+        )) as AdSyncTaxProfileResult;
+        if (result.__kind__ === "ok") return result.ok;
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !isFetching && !!syncId,
+  });
+}
+
+export function useSetAdSyncTaxProfile() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      syncId: string;
+      country: string;
+      panNumber: string;
+      gstNumber: string;
+      taxRate: bigint;
+    }): Promise<AdSyncTextResult> => {
+      if (!actor) throw new Error("Not connected");
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).setAdSyncTaxProfile(
+          data.syncId,
+          data.country,
+          data.panNumber,
+          data.gstNumber,
+          data.taxRate,
+        )) as AdSyncTextResult;
+      } catch (e) {
+        return {
+          __kind__: "err",
+          err: e instanceof Error ? e.message : "Unknown error",
+        };
+      }
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["adSyncTaxProfile", variables.syncId],
+      });
+    },
+  });
+}
+
+export function useGetAdSyncRevenueShare() {
+  const { actor, isFetching } = useActor();
+  return useQuery<bigint>({
+    queryKey: ["adSyncRevenueShare"],
+    queryFn: async () => {
+      if (!actor) return BigInt(70);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (await (actor as any).getAdSyncRevenueShare()) as bigint;
+      } catch {
+        return BigInt(70);
+      }
+    },
+    enabled: !!actor && !isFetching,
   });
 }

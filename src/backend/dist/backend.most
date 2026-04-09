@@ -1,5 +1,119 @@
 // Version: 1.0.0
 type AdGroup__288247954 = {campaignId : Nat; id : Nat; name : Text};
+type AdSyncAccountType__791994895 = {#business; #individual};
+type AdSyncClickLog__617032993 =
+  {
+    advertiserSyncId : Text;
+    clickId : Text;
+    ipAddress : Text;
+    publisherSyncId : Text;
+    timestamp : Int
+  };
+type AdSyncCurrency__243169028 = {#EUR; #INR; #USD};
+type AdSyncInvoice__550137959 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    finalAmount : Nat;
+    id : Nat;
+    invoiceType : {#earning; #payout};
+    reference : Text;
+    syncId : Text;
+    taxAmount : Nat
+  };
+type AdSyncKycRecordLegacy__135480515 =
+  {
+    addressProofStatus : AdSyncKycStatus__68394126;
+    adminNotes : Text;
+    idProofStatus : AdSyncKycStatus__68394126;
+    lastUpdatedAt : Int;
+    panStatus : AdSyncKycStatus__68394126;
+    status : AdSyncKycStatus__68394126;
+    submittedAt : ?Int;
+    syncId : Text;
+    verifiedAt : ?Int
+  };
+type AdSyncKycRecord__918231168 =
+  {
+    adminNotes : Text;
+    lastUpdatedAt : Int;
+    status : AdSyncKycStatus__68394126;
+    submittedAt : ?Int;
+    syncId : Text;
+    verifiedAt : ?Int
+  };
+type AdSyncKycStatus__68394126 = {#none; #pending; #verified};
+type AdSyncPaymentDetails__1015780442 =
+  {
+    accountName : Text;
+    accountNumber : ?Text;
+    country : Text;
+    iban : ?Text;
+    ifsc : ?Text;
+    method : AdSyncPaymentMethod__1003177989;
+    swiftCode : ?Text;
+    syncId : Text;
+    upiId : ?Text
+  };
+type AdSyncPaymentMethod__1003177989 = {#bank; #swift; #upi};
+type AdSyncPayoutLog__357600033 =
+  {
+    amount : Nat;
+    completedAt : ?Int;
+    createdAt : Int;
+    id : Nat;
+    paymentMethod : Text;
+    status : AdSyncPayoutStatus__858939402;
+    syncId : Text
+  };
+type AdSyncPayoutStatus__858939402 = {#completed; #failed; #processing};
+type AdSyncRole__944504786 = {#advertiser; #both; #publisher};
+type AdSyncTaxProfile__32139745 =
+  {
+    country : Text;
+    gstNumber : Text;
+    lastUpdatedAt : Int;
+    panNumber : Text;
+    syncId : Text;
+    taxRate : Nat
+  };
+type AdSyncTransactionReason__89587788 =
+  {#ad_click; #earning; #payout; #refund; #topup};
+type AdSyncTransactionType__335147719 = {#credit; #debit};
+type AdSyncTransaction__716313062 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    id : Nat;
+    reason : AdSyncTransactionReason__89587788;
+    syncId : Text;
+    transactionType : AdSyncTransactionType__335147719
+  };
+type AdSyncUser__129676673 =
+  {
+    accountType : AdSyncAccountType__791994895;
+    address : Text;
+    city : Text;
+    country : Text;
+    createdAt : Int;
+    email : Text;
+    fullName : Text;
+    kycStatus : AdSyncKycStatus__68394126;
+    mobile : Text;
+    passwordHash : Text;
+    role : AdSyncRole__944504786;
+    state : Text;
+    syncId : Text
+  };
+type AdSyncWallet__121144630 =
+  {
+    balance : Nat;
+    createdAt : Int;
+    currency : AdSyncCurrency__243169028;
+    syncId : Text;
+    totalEarned : Nat;
+    totalSpent : Nat
+  };
 type Ad__904238058 =
   {
     adGroupId : Nat;
@@ -312,6 +426,23 @@ actor {
   stable var adClickCooldowns : [(Text, Int)];
   stable var adClickCooldownsV2 : [(Text, Int)];
   stable var adGroups : [AdGroup__288247954];
+  stable var adSyncClickLogs : [AdSyncClickLog__617032993];
+  stable var adSyncInvoices : [(Nat, AdSyncInvoice__550137959)];
+  stable var adSyncKycRecords : [(Text, AdSyncKycRecordLegacy__135480515)];
+  stable var adSyncKycRecordsV2 : [(Text, AdSyncKycRecord__918231168)];
+  stable var adSyncMinPayout : Nat;
+  stable var adSyncNextInvoiceId : Nat;
+  stable var adSyncNextPayoutId : Nat;
+  stable var adSyncNextTransactionId : Nat;
+  stable var adSyncPaymentDetails :
+    [(Text, AdSyncPaymentDetails__1015780442)];
+  stable var adSyncPayoutLogs : [(Nat, AdSyncPayoutLog__357600033)];
+  stable var adSyncProcessedOrderIds : [Text];
+  stable var adSyncRevenueShare : Nat;
+  stable var adSyncTaxProfiles : [(Text, AdSyncTaxProfile__32139745)];
+  stable var adSyncTransactions : [(Nat, AdSyncTransaction__716313062)];
+  stable var adSyncUsers : [(Text, AdSyncUser__129676673)];
+  stable var adSyncWallets : [(Text, AdSyncWallet__121144630)];
   stable var ads : [Ad__904238058];
   stable var adsEnabled : Bool;
   stable var advertiserProfiles : [AdvertiserProfile__388179887];
